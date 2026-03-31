@@ -1,0 +1,25 @@
++-------------+
+| Mar 30 2026 |
++-------------+
+
+1. created new folder ~/ethan
+
+2. copied contents /Applications/ngs/pipelines/rnaseq and ~/rnaseqpipeline.yml into ~/ethan
+
+3. modified the .yml with the additional: 
+  - git
+  - fastqc=0.12.1
+  - kallisto=0.51.1
+  - gsea
+  - tree
+
+4. tried creating new conda environment ethan_copy_rnaseqpipeline with the .yml, but it failed, so I created a copy of the existing environment: 
+conda create --name ethan_copy_rnaseqpipeline --clone rnaseqpipeline
+conda activate ethan_copy_rnaseqpipeline
+conda install -c bioconda -c conda-forge git fastqc=0.12.1 kallisto=0.51.1 gsea tree
+
+NOTE: I abandoned this idea due to the persistent inconsistency in the base clone: 
+- Root cause: rmats/python 3.12 conflict on local osx-64 architecture.
+- I simply installed git and tree onto the base env, and fastqc, kallisto, and gsea can wait later. 
+
+5. 
