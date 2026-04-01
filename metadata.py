@@ -147,12 +147,12 @@ def parse_fastq_files(parent_dir, experiment_type, reference_name):
 
 # Verify command-line arguments
 if len(sys.argv) == 1:
-    print("Usage: metadata.py <parent_dir> <reference_name> <investigator_name> <PE|SE>")
+    print("Usage: metadata.py <parent_dir> <reference_name> <investigator_name> <PE|SE> <output_dir>")
     print(f"Available references are: {', '.join(get_available_references())}")
     sys.exit(0)
 
 if len(sys.argv) < 5:
-    print("Usage: metadata.py <parent_dir> <reference_name> <investigator_name> <PE|SE>")
+    print("Usage: metadata.py <parent_dir> <reference_name> <investigator_name> <PE|SE> <output_dir>")
     print(f"Available references are: {', '.join(get_available_references())}")
     sys.exit(1)
 
@@ -161,6 +161,7 @@ parent_dir = Path(sys.argv[1])
 reference_name = sys.argv[2]
 investigator = sys.argv[3]
 experiment_type = sys.argv[4].upper()  # Expect PE or SE
+output_dir = Path(sys.argv[5])
 
 # Check parent_dir name format: must be "model_experiment"
 if len(parent_dir.name.split('_')) != 2:
@@ -176,7 +177,7 @@ if not check_reference_availability(reference_name):
     sys.exit(1)
 
 # Set up logging
-log_filename = f'metadata_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
+log_filename = f'{output_dir}/metadata_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
 logging.basicConfig(filename=log_filename, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("Starting metadata generation.")
@@ -225,7 +226,7 @@ metadata_df['Species'] = reference_name
 
 # Export to TSV
 timestamp = datetime.now().strftime("%m%d%Y_%H%M%S")
-metadata_filename = f'{investigator}_metadata_{timestamp}.tsv'
+metadata_filename = f'{output_dir}/{investigator}_metadata_{timestamp}.tsv'
 metadata_df.to_csv(metadata_filename, sep='\t', index=False)
 
 logging.info(f"Metadata file generated: {metadata_filename}")

@@ -20,6 +20,46 @@ conda install -c bioconda -c conda-forge git fastqc=0.12.1 kallisto=0.51.1 gsea 
 
 NOTE: I abandoned this idea due to the persistent inconsistency in the base clone: 
 - Root cause: rmats/python 3.12 conflict on local osx-64 architecture.
-- I simply installed git and tree onto the base env, and fastqc, kallisto, and gsea can wait later. 
+- I simply installed git and tree onto a new env called utils_ethan, and fastqc, kallisto, and gsea can wait later. 
 
-5. 
+5. created git repo of this folder scripts:
+https://github.com/eisrael123/rnaseq-pipeline.git
+
++-------------+
+| Mar 31 2026 |
++-------------+
+
+1. copied ~/Desktop/pipelineSampleData/Mutu_siCNOT-Zta/cntl and ~/Desktop/pipeline/SampleData/Mutu_siCNOT-Zta/test into ~/ethan/rnaseq/data/Mutu_siCNOT-Zta
+data
+├── Mutu_siCNOT-Zta
+│   ├── cntl
+│   │   ├── Mutu_siCNOT1-Cntl1_cntl1_1.fq.gz
+│   │   ├── Mutu_siCNOT1-Cntl1_cntl1_2.fq.gz
+│   │   ├── Mutu_siCNOT1-Cntl2_cntl2_1.fq.gz
+│   │   ├── Mutu_siCNOT1-Cntl2_cntl2_2.fq.gz
+│   │   ├── Mutu_siCNOT1-Cntl3_cntl3_1.fq.gz
+│   │   └── Mutu_siCNOT1-Cntl3_cntl3_2.fq.gz
+│   └── test
+│       ├── Mutu_siCNOT1-Zta1_test1_1.fq.gz
+│       ├── Mutu_siCNOT1-Zta1_test1_2.fq.gz
+│       ├── Mutu_siCNOT1-Zta2_test2_1.fq.gz
+│       ├── Mutu_siCNOT1-Zta2_test2_2.fq.gz
+│       ├── Mutu_siCNOT1-Zta3_test3_1.fq.gz
+│       └── Mutu_siCNOT1-Zta3_test3_2.fq.gz
+└── output
+
+2. changed metadata.py to have a 5th arg for output dir: 
+output_dir = Path(sys.argv[5])
+log_filename = f'{output_dir}/metadata_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
+metadata_filename = f'{output_dir}/{investigator}_metadata_{timestamp}.tsv'
+
+NOTE: in the future, could add an argparse option and set parent dir to default output dir
+NOTE: metadata.py (and all other scripts) starts with #!/usr/bin/env python3 and calls an invocation of python3 that might not include the necessary packages. everything needs be run as python <script>....
+
+3. called 'python metadata.py /Users/mac14/ethan/rnaseq/data/Mutu_siCNOT-Zta/ hg38plusAkataInverted ethan PE /Users/mac14/ethan/rnaseq/data/output/'
+└── output
+    ├── ethan_metadata_03312026_182022.tsv
+    └── metadata_log_20260331_182022.txt
+
+4. called 'python rnaseq.py /Users/mac14/ethan/rnaseq/data/output/ethan_metadata_03312026_182022.tsv /Users/mac14/ethan/rnaseq/data/output'
+
