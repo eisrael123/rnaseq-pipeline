@@ -62,4 +62,57 @@ NOTE: metadata.py (and all other scripts) starts with #!/usr/bin/env python3 and
     └── metadata_log_20260331_182022.txt
 
 4. called 'python rnaseq.py /Users/mac14/ethan/rnaseq/data/output/ethan_metadata_03312026_182022.tsv /Users/mac14/ethan/rnaseq/data/output'
+NOTE: it seems like it runs, but there are some stranding files left over from the run that are not in any of the 3 files:
+  1_Preprocessing
+  2_Analysis
+  3_results
+There are folders that are created as a byproduct that have been mostly emptied out, here are the calls that I noticed did NOT work:
+  move_files("rmats/*.txt", results_dir / "3_Results/09_documents") --> stayed in "/Users/mac14/ethan/rnaseq/data/output_3_31/rmats/"
 
+  move_files("Rplots.pdf", results_dir / "3_Results/09_documents") --> stayed in pwd: "/Users/mac14/ethan/rnaseq/scripts"
+  
+  move_files("terminal_output_*.tsv", "3_Results/09_documents") --> stayed in "/Users/mac14/ethan/rnaseq/data/output_3_31/"
+  
+  move_files("alignmentSummary.tsv", "3_Results/09_documents") --> stayed in "/Users/mac14/ethan/rnaseq/data/output_3_31/"
+    passed as relative path, added "results_dir /"
+  move_files("*.html", results_dir / "3_Results/09_documents") --> stayed in "/Users/mac14/ethan/rnaseq/data/output_3_31/"
+
+I might as well fix these files before creating a container. First I’ll try to bug fix the move_files function 
+so that everything gets correctly emptied out into the correct output folders when called. If that works, I’ll add lines at the end to delete 
+all of the emptied out folders like deseq2, rats, sleuth, and star.
+
++-------------+
+| Apr 7 2026 |
++-------------+
+
+1. bugfixed the code so that files get organized correctly.
+
+  move_files("Rplots.pdf", results_dir / "3_Results/09_documents") --> stayed in pwd: "/Users/mac14/ethan/rnaseq/scripts"
+    Rplots got created in pwd so it never found the file, changed it to subprocess.run(cmd, shell=True, check=True, cwd=str(results_dir))
+  move_files("terminal_output_*.tsv", "3_Results/09_documents") --> stayed in "/Users/mac14/ethan/rnaseq/data/output_3_31/"
+    passed as relative path in pwd, added "results_dir /"
+  move_files("alignmentSummary.tsv", "3_Results/09_documents") --> stayed in "/Users/mac14/ethan/rnaseq/data/output_3_31/"
+    passed as relative path in pwd, added "results_dir /"
+  
+  move_files("alignmentSummary.tsv", "3_Results/09_documents") --> fileNotFound error so the below 2 lines never executed:
+    move_files("rmats/*.txt", results_dir / "3_Results/09_documents") --> stayed in "/Users/mac14/ethan/rnaseq/data/output_3_31/rmats/" 
+    move_files("*.html", results_dir / "3_Results/09_documents") --> stayed in "/Users/mac14/ethan/rnaseq/data/output_3_31/"
+  NOTE: I added / results_dir so the folder to move to should be found and the other lines should subsequently execute
+  NOTE: not just those 2 lines, the rest of the script ceased to execute.
+
+2. tried the pipeline again. this time the rest of the script SHOULD run, so including removing the dirs, renaming figures, etc
+
+  '''
+  mkdir ~/ethan/rnaseq/data/output_4_7 
+  python metadata.py /Users/mac14/ethan/rnaseq/data/Mutu_siCNOT-Zta/ hg38plusAkataInverted ethan PE /Users/mac14/ethan/rnaseq/data/output_4_7/
+  python rnaseq.py /Users/mac14/ethan/rnaseq/data/output_4_7/ethan_metadata_04072026_134309.tsv /Users/mac14/ethan/rnaseq/data/output_4_7
+  '''
+  everything works!
+  (utils_ethan) mac14@Mac14s-MacBook-Pro output_4_7 % ls   
+  1_Preprocessing
+  2_Analysis
+  3_Results
+  ethan_metadata_04072026_134309.tsv
+  processing_log.tsv
+
+3. updated repo with bugfixed files

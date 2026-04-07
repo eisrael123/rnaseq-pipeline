@@ -538,12 +538,10 @@ def run_deseq2_analysis(results_dir, species_name):
     cmd = f"Rscript {str(r_script)} {str(results_dir)} {species_name}"
     print(f"Running DESeq2 analysis with command: {cmd}")  # Debug statement
 
-    # Run the DESeq2 analysis script
-    subprocess.run(cmd, shell=True, check=True)
-
     # Execute the R script
     try:
-        subprocess.run(cmd, shell=True, check=True)
+        # Run from results_dir so any implicit R outputs (e.g. Rplots.pdf) land there.
+        subprocess.run(cmd, shell=True, check=True, cwd=str(results_dir))
         print("DESeq2 analysis completed successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Error running DESeq2 analysis: {e}")
@@ -612,7 +610,8 @@ def run_sleuth_analysis(results_dir, species_name):
 
     # Execute the R script
     try:
-        subprocess.run(command, check=True)
+        # Run from results_dir so any implicit R outputs (e.g. Rplots.pdf) land there.
+        subprocess.run(command, check=True, cwd=str(results_dir))
         print("Sleuth analysis completed successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Error running Sleuth analysis: {e}")
@@ -1881,12 +1880,11 @@ def organize_output(results_dir, sample_names):
     move_files("transcriptCoverage.tsv", results_dir / "3_Results/09_documents")
     move_files("mycoplasma_report.tsv", results_dir / "3_Results/09_documents")
     move_files("metadata_log_*.txt", results_dir / "3_Results/09_documents")
-    move_files("alignmentSummary.tsv", "3_Results/09_documents")
-    move_files("terminal_output_*.tsv", "3_Results/09_documents")
+    move_files("alignmentSummary.tsv", results_dir / "3_Results/09_documents")
+    move_files("terminal_output_*.tsv", results_dir / "3_Results/09_documents")
     move_files("Rplots.pdf", results_dir / "3_Results/09_documents")
     move_files("*.html", results_dir / "3_Results/09_documents")
     move_files("rmats/*.txt", results_dir / "3_Results/09_documents")
-    move_files(".html", results_dir / "3_Results/09_documents")
 
     # Remove specific directories
     def remove_dirs(dirs_to_remove):
