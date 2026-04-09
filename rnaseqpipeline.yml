@@ -1,0 +1,79 @@
+name: rnaseqpipeline
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  # Keep this YAML portable across platforms (macOS Intel/ARM, Linux x86_64/ARM).
+  # Avoid pinning low-level system libraries (xz/libgfortran/etc.); let conda solve them per-architecture.
+  # rMATS (4.3.0) currently resolves most reliably with Python 3.10 on Linux ARM.
+  - python=3.10
+  - pip
+
+  # Core pipeline tools (conda)
+  - fastp=0.23.4
+  - fastqc=0.12.1
+  - star=2.7.11b
+  - samtools
+  - kallisto=0.51.1
+  - rmats=4.3.0
+
+  # Python libs (prefer conda for compiled deps)
+  # rMATS requires numpy <2.0; pin to a stable 1.x series
+  - numpy=1.26
+  - pandas
+  - matplotlib
+  - seaborn
+  - tqdm
+  - pysam
+
+  # RSeQC provides infer_experiment.py used by rnaseq.py
+  - rseqc=5.0.4
+
+  # UCSC wigToBigWig — convert_wig_to_bigWig()
+  - ucsc-wigtobigwig
+
+  # Perl — splice_junction_strand_separator.pl (SJ.out.tab → BED)
+  - perl
+
+  # Broad GSEA — gsea-cli.sh (run_gsea, run_gsea_preranked); pulls a JRE as needed
+  - gsea
+
+  # R + libs — deseq2_analysis_ercc.R (DESeq2, ggplot2, ggrepel, reshape2)
+  # and sleuth_analysis_ercc.R (sleuth, dplyr)
+  - r-base
+  - bioconductor-deseq2
+  - r-ggplot2
+  - r-ggrepel
+  - r-reshape2
+  - r-dplyr
+  - r-sleuth
+
+  # Convenience tools
+  - git
+  - tree
+  - pip:
+      - bx-python==0.13.0
+      - chardet==4.0.0
+      - contourpy==1.3.1
+      - cycler==0.12.1
+      - et-xmlfile==2.0.0
+      - excel==1.0.1
+      - fonttools==4.55.3
+      - jinja2==3.1.5
+      - kiwisolver==1.4.7
+      - lml==0.1.0
+      - logomaker==0.8
+      - markupsafe==3.0.2
+      - openpyxl==3.1.5
+      - packaging==24.2
+      - pillow==11.0.0
+      - pyexcel==0.7.0
+      - pyexcel-io==0.6.7
+      - pyparsing==3.2.0
+      - python-dateutil==2.9.0.post0
+      - pytz==2024.2
+      - setuptools==75.6.0
+      - six==1.17.0
+      - texttable==1.6.4
+      - tzdata==2024.2

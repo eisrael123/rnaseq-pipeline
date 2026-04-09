@@ -177,7 +177,8 @@ if not check_reference_availability(reference_name):
     sys.exit(1)
 
 # Set up logging
-log_filename = f'{output_dir}/metadata_log_{datetime.now().strftime("%Y%m%d_%H%M%S")}.txt'
+timestamp = datetime.now().strftime("%m%d%Y_%H%M%S")
+log_filename = f'{output_dir}/metadata_log_{timestamp}.txt'
 logging.basicConfig(filename=log_filename, level=logging.INFO,
                     format='%(asctime)s - %(levelname)s - %(message)s')
 logging.info("Starting metadata generation.")
@@ -225,7 +226,6 @@ metadata_df = metadata_df[['Path Read 1', 'Path Read 2', 'Species', 'Sample name
 metadata_df['Species'] = reference_name
 
 # Export to TSV
-timestamp = datetime.now().strftime("%m%d%Y_%H%M%S")
 metadata_filename = f'{output_dir}/{investigator}_metadata_{timestamp}.tsv'
 metadata_df.to_csv(metadata_filename, sep='\t', index=False)
 

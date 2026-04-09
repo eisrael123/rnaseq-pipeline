@@ -17,6 +17,7 @@ import time
 soft, hard = 10000, 10000
 resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
 import shutil
+import tempfile
 import json
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
@@ -130,7 +131,13 @@ def run_star(sample_name, fastq1, fastq2, star_results_dir, species_name, is_pai
     decompression_command = "zcat" if platform.system() == "Linux" else "gzcat"
     genome_dir = REFERENCE_DIR / species_name / "STAR"
     gtf_file = REFERENCE_DIR / species_name / "annotations" / f"{species_name}.gtf"
-    tmp_dir = f"/Users/mac14/Desktop/Misc_Desktop_Folders/rnaseqPipelineTmpDir_{sample_name}"
+    # macOS: legacy Desktop temp dir (ensure parent exists); other OS: system temp
+    if platform.system() == "Darwin":
+        _star_tmp_parent = Path("/Users/mac14/Desktop/Misc_Desktop_Folders")
+        _star_tmp_parent.mkdir(parents=True, exist_ok=True)
+        tmp_dir = str(_star_tmp_parent / f"rnaseqPipelineTmpDir_{sample_name}")
+    else:
+        tmp_dir = str(Path(tempfile.gettempdir()) / f"rnaseqPipelineTmpDir_{sample_name}")
 
     if is_paired_end:
         star_cmd = [
@@ -304,7 +311,7 @@ def run_kallisto(fastq1, fastq2, sample_name, species_name, strandedness, result
 
     # Configure the kallisto command based on PE/SE and strandedness
     kallisto_cmd = [
-        "kallisto", "quant", "-b", "100", "-i", str(kallisto_index),
+        "kallisto", "quant", "-b", "0", "-i", str(kallisto_index),
         "-o", str(kallisto_dir), "-t", "10"
     ]
     if stranded_option:

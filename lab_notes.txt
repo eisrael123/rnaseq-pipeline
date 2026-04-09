@@ -115,4 +115,215 @@ all of the emptied out folders like deseq2, rats, sleuth, and star.
   ethan_metadata_04072026_134309.tsv
   processing_log.tsv
 
+  NOTE: it expects rnaseq.py to be ran in the same folder as the output of metadata, because it moves metadata_log*.txt without handling its path as an arg, 
+  might want to specify that in the docker documentation
+
 3. updated repo with bugfixed files
+NOTE: Rplots.pdf moved to /Users/mac14/ethan/rnaseq/data/output_3_31
+
+4. started containerization
+  a. created Dockerfile
+  b. created .dockerignore
+  c. created an manual named DOCKER.md
+  NOTE: all of these to be trial and tested. immediately, the reference file directory unfortunately needs to exist on the users local
+  machine before being mounted onto the image. if we want to reproduce this outside of the macos system, we may need to consider uploading 
+  reference files to cloud to be accessed, or maybe zip it and try git long term storage. 
+
++-------------+
+| Apr 8 2026 |
++-------------+
+
+1. tried building the docker image, but failed because because Docker is building for linux-aarch64 (Apple Silicon), but the current 
+rnaseqpipeline.yml is essentially a copy of an osx environment with lots of tightly pinned low-level libraries (e.g. libgfortran=5.0.0, xz=5.6.4) 
+that don’t solve cleanly on Linux ARM.
+
+2. in attempt to fix the issue, only kept the top-level tools my pipeline needs in the .yml: 
+* pipeline tools (star, kallisto, fastp, etc)
+* python tools (numpy, pandas, etc)
+
+3. created docker image: 'docker build -t rnaseqpipeline:latest .'
+* docker build --> tell docker to look for Dockerfile 
+* -t --> give human readable name (as opposed to randomly generated hash by default)
+* latest --> tag image by version (chose 'latest' by default)
+* . --> assign cwd to pwd, meaning look for Dockerfile here
+
+(base) Mac14s-MacBook-Pro:scripts mac14$ docker images 
+REPOSITORY                      TAG                                           IMAGE ID       CREATED          SIZE
+rnaseqpipeline                  latest                                        73f5840f1b54   16 minutes ago   2.13GB
+ensemblorg/ensembl-vep          latest                                        67a55a27bfd5   23 months ago    903MB
+ontresearch/wf-transcriptomes   sha3d3c83523695550f398cbe095551b1192de5085a   68faa1b10731   3 years ago      2.7GB
+alpine/git                      latest                                        9793ee61fc75   3 years ago      43.4MB
+
+4. ran docker container as an interactive shell: 
+'''
+docker run --rm -it \
+  -e CONDA_DEFAULT_ENV=rnaseqpipeline \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Applications/ngs/pipelines/rnaseq/referenceFiles:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/Mutu_siCNOT-Zta:/data/Mutu_siCNOT-Zta:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/output_docker_4_8:/data/output_docker_4_8" \
+  -w /work \
+  rnaseqpipeline:latest \
+  bash
+'''
+-e --> point conda environment variable to rnaseqpipeline to pass the string check in metadata.py and rnaseq.py
+-v --> mount folders to container 
+  * ro --> read only
+  NOTE: references are looked under a fixed path 'REFERENCE_DIR = Path('/Applications/ngs/pipelines/rnaseq/referenceFiles')',
+  therefore the volume mount must be that path.
+  NOTE: For each line, whatever appears at the host path is visible at the container path; for a read-write mount, changes from the container (new files, edits) 
+  on the right-hand path (right of the colon) show up on the host at the left-hand path (left of the colon).
+-w --> set current working directory. 
+  NOTE: The Dockerfile sets WORKDIR /work and COPY . /work, so the repo lives there. -w /work just starts your shell in that directory 
+  (handy for running python metadata.py ... without cd).
+
+5. ran metadata.py in the container: 
+'''
+python metadata.py /data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE /data/output_docker_4_8
+'''
+
+pandas wasn't detected because base is implicitely activated when bash is started. I added these in the Dockerfile and 
+rebuilt the image:
+'''
+ENV CONDA_AUTO_ACTIVATE_BASE=false
+ENV CONDA_DEFAULT_ENV=rnaseqpipeline
+'''
+
+trying again, removing the -e option as it is not needed anymore: 
+'''
+docker rmi rnaseqpipeline
+docker build -t rnaseqpipeline:latest .
+docker run --rm -it \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Applications/ngs/pipelines/rnaseq/referenceFiles:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/Mutu_siCNOT-Zta:/data/Mutu_siCNOT-Zta:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/output_docker_4_8:/data/output_docker_4_8" \
+  -w /work \
+  rnaseqpipeline:latest \
+  bash
+'''
+
+base is still activated, just add it to the command: 
+'''
+conda activate rnaseqpipeline
+python metadata.py /data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE /data/output_docker_4_8
+'''
+
+6. ran rnaseq.py in the container: 
+'''
+python rnaseq.py /data/output_docker_4_8/ethan_metadata_04082026_223357.tsv /data/output_docker_4_8
+'''
+EXITING because of fatal ERROR: could not make temporary directory: /Users/mac14/Desktop/Misc_Desktop_Folders/rnaseqPipelineTmpDir_Mutu_siCNOT1-Cntl1_cntl1/
+SOLUTION: (i) please check the path and writing permissions 
+ (ii) if you specified --outTmpDir, and this directory exists - please remove it before running STAR
+
+Apr 08 22:36:16 ...... FATAL ERROR, exiting
+
+Containers don't use the same system as /Users/mac14, so I changed it to account for non-mac containers: 
+# macOS: legacy Desktop temp dir (ensure parent exists); Linux/Docker: system temp; other OS: same as Linux
+    if platform.system() == "Darwin":
+        _star_tmp_parent = Path("/Users/mac14/Desktop/Misc_Desktop_Folders")
+        _star_tmp_parent.mkdir(parents=True, exist_ok=True)
+        tmp_dir = str(_star_tmp_parent / f"rnaseqPipelineTmpDir_{sample_name}")
+    else:
+        tmp_dir = str(Path(tempfile.gettempdir()) / f"rnaseqPipelineTmpDir_{sample_name}")
+
+in this code block, tempfile.gettempdir() will return a suitable writable temp directory on that OS.
+
+trying again (with rebuilt image):
+'''
+python rnaseq.py /data/output_docker_4_8/ethan_metadata_04082026_230056.tsv /data/output_docker_4_8
+'''
+STAR caused the Linux OOM killer I believe, increasing memory on Docker desktop settings from 16GB to 48GB
+
+trying again: 
+'''
+python rnaseq.py /data/output_docker_4_8/ethan_metadata_04082026_232350.tsv /data/output_docker_4_8
+'''
+samtools not installed, tried including samtools, ucsc-wigtobigwig, perl, gsea, r-base, bioconductor-deseq2, r-ggplot2,r-ggrepel,r-reshape2,r-dplyr,r-sleuth
+in the .yml and rebuilding the image
+
+trying again: 
+'''
+python rnaseq.py /data/output_docker_4_8/ethan_metadata_04082026_234520.tsv /data/output_docker_4_8
+'''
+kallisto seemed to fail because of memory issues. also complained about only 4 cpus on docker when we pass 10 as arg.
+increasing docker mem to 64 and cpus to 10. 
+
+trying again: 
+'''
+python rnaseq.py /data/output_docker_4_8/ethan_metadata_04092026_000902.tsv /data/output_docker_4_8
+'''
+NOTE: interesting how its now 04092026 which is inaccurate in my current PST timezone. might need to look into that.
+kallisto is still dying right after starting quant. trying again by lower bootstraps in kallisto from 100 to 30:
+# Configure the kallisto command based on PE/SE and strandedness
+    kallisto_cmd = [
+        "kallisto", "quant", "-b", "30", "-i", str(kallisto_index),
+        "-o", str(kallisto_dir), "-t", "10"
+    ]
+
+trying again with the newly rebuilt image:
+'''
+python rnaseq.py /data/output_docker_4_8/ethan_metadata_04092026_010225.tsv /data/output_docker_4_8
+'''
+
++-------------+
+| Apr 9 2026 |
++-------------+
+continuing on with docker...
+
+with the previous run, kallisto is still the issue. trying 0 bootstraps and seeing if that still aborts:
+'''
+python rnaseq.py /data/output_docker_4_8/ethan_metadata_04092026_153240.tsv /data/output_docker_4_8
+'''
+  NOTE: i noticed metadata log is 20260409, while the metadata file is 04092026. changing log to match file for consistency:
+  '''
+  timestamp = datetime.now().strftime("%m%d%Y_%H%M%S")
+  log_filename = f'{output_dir}/metadata_log_{timestamp}.txt'
+  ''' 
+STILL didn't work. it's pretty bizarre because kallisto is the same version in the container as in the main env. looked it up on AI and it says this: 
+"""
+Kallisto index incompatibility/corruption
+  *The *.kallisto.idx was built with a different kallisto build/version/architecture than the one in your container, or the file is corrupted/partial.
+  *This is the #1 cause when -b 0 still crashes.
+Architecture mismatch (Apple Silicon / linux-aarch64 vs older index)
+  *You’re running kallisto inside a Linux ARM container. If the index was generated on a different platform/build, it can trigger weird failures.
+  *Bad FASTQ input (less common, but possible)
+Corrupt .fq.gz, truncated file, etc. Normally kallisto prints a readable error, but it’s worth ruling out quickly.
+"""
+I'm gonna try to resolve the first option first and rebuild the kallisto index file.
+Couple things to note: 
+1) kallisto files are stored by species and then kallisto. in my case:
+"""
+(rnaseqpipeline) mac14@Mac14s-MacBook-Pro rnaseq % ls ~/ethan/rnaseq/referenceFiles/hg38plusAkataInverted/kallisto
+all_contaminants.kallisto.idx
+hg38plusAkataInverted.kallisto.idx
+"""
+2) rnaseq.py finds the kallisto index file in run_kallisto() with the following lines: 
+'''
+kallisto_index = (
+        REFERENCE_DIR / species_name / "kallisto" / "all_contaminants.kallisto.idx"
+        if is_contaminant_run
+        else REFERENCE_DIR / species_name / "kallisto" / f"{species_name}.kallisto.idx"
+    )
+'''
+since is_contaminant run == False (which it is in my run), then the reference file I need to rebuild is:
+~/ethan/rnaseq/referenceFiles/hg38plusAkataInverted/kallisto/hg38plusAkataInverted.kallisto.idx
+
+I'm gonna rename the original index file as hg38plusAkataInverted_ORIGINAL.kallisto.idx, then rebuild with the following command: 
+
+
+
+
+
++------------------------------------------------------------------------------------------------------+
+FOR QUICK REFERENCE:
+docker build -t rnaseqpipeline:latest .
+docker run --rm -it \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Applications/ngs/pipelines/rnaseq/referenceFiles:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/Mutu_siCNOT-Zta:/data/Mutu_siCNOT-Zta:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/output_docker_4_8:/data/output_docker_4_8" \
+  -w /work \
+  rnaseqpipeline:latest \
+  bash
+conda activate rnaseqpipeline
+python metadata.py /data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE /data/output_docker_4_8
++------------------------------------------------------------------------------------------------------+
