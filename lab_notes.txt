@@ -308,22 +308,270 @@ kallisto_index = (
 since is_contaminant run == False (which it is in my run), then the reference file I need to rebuild is:
 ~/ethan/rnaseq/referenceFiles/hg38plusAkataInverted/kallisto/hg38plusAkataInverted.kallisto.idx
 
-I'm gonna rename the original index file as hg38plusAkataInverted_ORIGINAL.kallisto.idx, then rebuild with the following command: 
+I'm gonna rename the original index file as hg38plusAkataInverted_ORIGINAL.kallisto.idx, then rebuild with the following commands: 
+'''
+#open docker container
+docker run --rm -it \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Applications/ngs/pipelines/rnaseq/referenceFiles" \
+  rnaseqpipeline:latest bash
 
+#build the index 
+kallisto index \
+  -i "/Applications/ngs/pipelines/rnaseq/referenceFiles/hg38plusAkataInverted/kallisto/hg38plusAkataInverted.kallisto.idx" \
+  "/Applications/ngs/pipelines/rnaseq/referenceFiles/hg38plusAkataInverted/fasta/hg38plusAkataInverted.transcriptome.fa"
+'''
 
+trying the pipeline again:
+'''
+python rnaseq.py /data/output_docker_4_9/ethan_metadata_04092026_185501.tsv /data/output_docker_4_9
+'''
 
+now, kallisto crashed when it access the contaminents file all_contaminants.kallisto.idx. This is a good sign, because it means 
+kallisto succeeded with the species index file I redid. I'm gonna reset bootstraps to 100 and see if it runs into the same error first 
+before redoing the contaminants index file. 
 
+trying again with boostraps back to 100: 
+'''
+python rnaseq.py /data/output_docker_4_9/ethan_metadata_04092026_192239.tsv /data/output_docker_4_9
+'''
+worked until the contaminants file as expected. 
 
-+------------------------------------------------------------------------------------------------------+
-FOR QUICK REFERENCE:
-docker build -t rnaseqpipeline:latest .
+rebuilding the contaminants file: 
+'''
+#open docker container
+docker run --rm -it \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Applications/ngs/pipelines/rnaseq/referenceFiles" \
+  rnaseqpipeline:latest bash
+
+#build the index 
+kallisto index \
+  -i "/Applications/ngs/pipelines/rnaseq/referenceFiles/hg38plusAkataInverted/kallisto/all_contaminants.kallisto.idx" \
+  "/Applications/ngs/pipelines/rnaseq/referenceFiles/hg38plusAkataInverted/fasta/all_contaminants.fa"
+'''
+
+trying again: 
+'''
+python rnaseq.py /data/output_docker_4_9/ethan_metadata_04092026_200916.tsv /data/output_docker_4_9
+'''
+everything up to deseq2 ran, but the R script was not found because run_deseq2_analysis looks for /Applications/ngs/pipelines/rnaseq/scripts/deseq2_analysis_ercc.R. 
+
+trying again creating a symlink in the docker image so that  /work point to -->  /Applications/ngs/pipelines/rnaseq/scripts when referenced in the script:
+  NOTE: will need to make this clear in DOCKER.md, or ideally change the script so it doesn't look for that specific path 
+'''
+mkdir /Users/mac14/ethan/rnaseq/data/output_docker_4_9v2 #wanna save output_docker_4_9 just in case 
 docker run --rm -it \
   -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Applications/ngs/pipelines/rnaseq/referenceFiles:ro" \
   -v "/Users/mac14/ethan/rnaseq/data/Mutu_siCNOT-Zta:/data/Mutu_siCNOT-Zta:ro" \
-  -v "/Users/mac14/ethan/rnaseq/data/output_docker_4_8:/data/output_docker_4_8" \
+  -v "/Users/mac14/ethan/rnaseq/data/output_docker_4_9v2:/data/output_docker_4_9v2" \
+  -w /work \
+  rnaseqpipeline:latest \
+  bash
+python metadata.py /data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE /data/output_docker_4_9v2/
+python rnaseq.py /data/output_docker_4_9v2/ethan_metadata_04092026_214243.tsv /data/output_docker_4_9v2
+'''
+select() doesn't work in the current version, changing to >=1.0,<1.2 and rebuilding the image:
+"""
+(rnaseqpipeline) root@3a566d07d30d:/work# Rscript -e 'packageVersion("dplyr")'
+[1] ‘1.1.4’
+"""
+This matches what's in the original environment: 
+"""
+(rnaseqpipeline) mac14@Mac14s-MacBook-Pro data % Rscript -e 'packageVersion("dplyr")'
+[1] ‘1.1.4’
+"""
+
+trying again: 
+'''
+python rnaseq.py /data/output_docker_4_9v2/ethan_metadata_04092026_231552.tsv /data/output_docker_4_9v2
+'''
+It did not find gsea-cli.sh, which is the command-line launcer for GSEA in the conda env. In run_gsea, for every .gmt it performs this command:
+"""
+for gmt_file in gsea_reference_dir.glob("*.gmt"):
+        rpt_label = gmt_file.stem
+        command = [
+            "gsea-cli.sh", "GSEA",
+            "-res", str(gsea_input_file),
+            "-cls", str(gsea_cls_file),
+            "-gmx", str(gmt_file),
+            "-permute", "gene_set",
+            "-collapse", "false",
+            "-plot_top_x", "50",
+            "-out", str(gsea_results_dir),
+            "-rpt_label", rpt_label
+        ]
+"""
+Currently, gsea-cli is in the environment but not gsea-cli.sh:
+"""
+(rnaseqpipeline) root@3a566d07d30d:/work# ls $CONDA_PREFIX/bin/*gsea*
+/opt/conda/envs/rnaseqpipeline/bin/gsea  /opt/conda/envs/rnaseqpipeline/bin/gsea-cli
+"""
+
++-------------+
+| Apr 9 2026 |
++-------------+
+
+For the latest issue...
+I am gonna try the quick fix which is to add a symbolic link to gsea-cli called gsea-cli.sh (an additional pointer that contains the path to the original file):
+"""
+(rnaseqpipeline) root@3a566d07d30d:/work# ln -s "$CONDA_PREFIX/bin/gsea-cli" "$CONDA_PREFIX/bin/gsea-cli.sh"
+(rnaseqpipeline) root@3a566d07d30d:/work# ls $CONDA_PREFIX/bin/*gsea*
+/opt/conda/envs/rnaseqpipeline/bin/gsea      /opt/conda/envs/rnaseqpipeline/bin/gsea-cli.sh
+/opt/conda/envs/rnaseqpipeline/bin/gsea-cli
+"""
+NOTE: the long term fix is updating rnaseq.py so future runs don't depend on a manual symlink, let's see if the short fix works first.
+Trying again with a different directory: 
+'''
+docker run --rm -it \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Applications/ngs/pipelines/rnaseq/referenceFiles:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/Mutu_siCNOT-Zta:/data/Mutu_siCNOT-Zta:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/output_docker_4_13:/data/output_docker_4_13" \
   -w /work \
   rnaseqpipeline:latest \
   bash
 conda activate rnaseqpipeline
-python metadata.py /data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE /data/output_docker_4_8
+ln -s "$CONDA_PREFIX/bin/gsea-cli" "$CONDA_PREFIX/bin/gsea-cli.sh"
+python metadata.py /data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE /data/output_docker_4_13/
+python rnaseq.py /data/output_docker_4_13/ethan_metadata_04132026_173113.tsv /data/output_docker_4_13
+'''
+NOTE: while I wait for this to finish running, the .txt and .cls benchmarks that Melody brought up are first created in:
+gsea_input_file = results_dir / "gsea" / "test.txt"
+gsea_cls_file = results_dir / "gsea" / "test.cls"
+
+Then they are moved to: 
+move_files("gsea/test*", results_dir / "2_Analysis/07_enrichment_analysis/1_prep_files")
+move_dir(results_dir / "gsea", results_dir / "2_Analysis/07_enrichment_analysis")
+
+Use '/Users/mac14/ethan/rnaseq/data/output_4_7/2_Analysis/07_enrichment_analysis/1_prep_files' as another benchmark for comparing output.
+
+It fully ran this time! 
+
+2. Comparing the output
+
+I created a test script to compare the contents of docker and the original run. Sanity check to see if it works:
+'''
+python3 folder_inventory_compare.py compare-dirs /Users/mac14/ethan/rnaseq/scripts /Users/mac14/ethan/rnaseq/scripts compare_log_benchmark.txt
+'''
+This compares the scripts folder to itself. In the output, everything matches which is expected.
+
+2 folders to compare: 
+/Users/mac14/ethan/rnaseq/data/output_docker_4_13
+/Users/mac14/ethan/rnaseq/data/output_4_7
+
+Im gonna structure the comparison in 3 sections:
+1) comparing the 3_Results/09_documents/results.html to see if results are the same 
+2) comparing the .txt and .cls files to see if the contents are the same 
+3) running folder_inventory_compare.py to observe any differences. There will definitely be discrepancies due to file naming differences (date or run # in the filename)
+and file sizes like 1.1 kb vs 1.2 kb because the package is slightly different. So this will be tested last and bugfixed to address the former problem. 
+
+part 1)
+* Strandedness is the same
+* Mapping statistics is the same from kallisto
+* Row ordering differences for Mapping statistics from STAR  (cntl1+test1,cntl2+test2 vs cntl1,cntl2,...) but results are functionally the same.
+* Row ordering differences for Mycoplasma (same as STAR) but results are the same
+* Tiny floating-point differences in Top DE Genes values, e.g:
+ *9.95019494171825 vs 9.95019494171823 in log2fold change for BHLF1_1
+ *similar tiny shifts in lfcSE, stat, pvalue, padj
+overall, both files are scientifically/analytically consistent 
+
+part 2) 
+The cls files are really short so its easy to check them visually. They are the same. 
+For the txt I used python's filecmp function:
+>>> filecmp.cmp("/Users/mac14/ethan/rnaseq/data/output_docker_4_13/2_Analysis/07_enrichment_analysis/1_prep_files/test.txt","/Users/mac14/ethan/rnaseq/data/output_4_7/2_Analysis/07_enrichment_analysis/1_prep_files/test.txt", shallow=False)
+True
+They have the same contents. 
+
+part 3) 
+running the test:
+'''
+python3 folder_inventory_compare.py compare-dirs /Users/mac14/ethan/rnaseq/data/output_4_7 /Users/mac14/ethan/rnaseq/data/output_docker_4_13 compare_log_v1.txt
+'''
+There's a whole lot of files with names differing based on date and/or run #, and file sizes by very small margins.
+Gonna try to address the differences in naming first.
+'''
+python3 folder_inventory_compare.py compare-dirs /Users/mac14/ethan/rnaseq/data/output_4_7 /Users/mac14/ethan/rnaseq/data/output_docker_4_13 compare_log_v2.txt
+'''
+Still a lot of mismatches. I tried regexing date and version out of the name (v3), and the bulk of the mismatches 2_Analysis/07_enrichment_analysis/gsea/.   
+The normalizer rewrites things like apr13-style segments and ISO dates, but it does not change the Gsea.<longdigits> folder name. So every file under that 
+directory is a different relative path between runs → thousands of Only in first on side A and thousands of Only in second on side B for the same logical outputs, 
+just under a new run folder.
+
+Then I tried stripping numerics completely (v4), but there still arises a lot size mismatches when it merges distinct biological replicates and even str1/str2 strand
+files into one name, which creates both Inconsistent sizes (within a tree) and a flood of Size Mismatch (between trees) 
+
+Overall, each pipeline output has thousands of files so honestly maybe it’s more efficient/relevant to stop comparing folders by names/size, but rather continue with 
+human-readable and important output metrics? Because if the important stuff is the same, then I see no reason to compare how Docker vs Mac got to the same conclusion.
+
+Gonna start with writing a script results_compare.py to just compare the .txt and .tsv contents in 3_Results/09_documents.
+"""
+(rnaseqpipeline) Mac14s-MacBook-Pro:scripts mac14$ python results_compare.py --folders /Users/mac14/ethan/rnaseq/data/output_docker_4_13/3_Results/09_documents /Users/mac14/ethan/rnaseq/data/output_4_7/3_Results/09_documents
+Filenames of both folders are the same (excluding metadata): True
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl3_cntl3.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta3_test3.tsv
+Discrepancy in content for: testBAMs.txt
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta2_test2.tsv
+Discrepancy in content for: controlBAMs.txt
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl2_cntl2.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl1_cntl1.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta1_test1.tsv
+Discrepancy in content for: topGenes.tsv
+Discrepancy in content for: alignmentSummary.tsv
+Match for: transcriptCoverage.tsv
+Discrepancy in content for: topTranscripts.tsv
+Match for: top_gene_tpms.tsv
+Discrepancy in content for: mycoplasma_report.tsv
+"""
+Gonna look deeper into why this is happening. 
+  *terminal_output_*.tsv --> Difference in:
+    *host paths (/Users/mac14/...) vs container paths (/data/...)
+    *output root name differences (output_4_7 vs output_docker_4_13)
+    *in some files, fastp line differs by runtime (0 vs 1 seconds)
+  *testBAMs.txt and controlBAMS.txt --> only difference is path prefix 
+  *topGenes.tsv --> functionally the same aside from tiny floating-point differents at far decimal places
+  *alignmentSummary.tsv --> results are functionally the same aside from difference in row ordering
+  *topTranscripts.tsv: 
+    *Both files have 10 rows
+    *8 are identical, 2 are unique
+    *only in output_4_7:
+      *BBLF2/BBLF3_1
+        *TPMs: 2308.85, 2576.29, 3308.91 (test samples)
+        *b: 4.51524249323902
+        *qval: 0.0
+      *BGLF5_1
+        *TPMs: 3682.22, 3764.26, 2606.5
+        *b: 4.38971048130144
+        *qval: 3.21929041415148e-305
+    *only in output_docker_4_13:
+      *BFRF1_1
+        *TPMs: 4556.87, 4841.03, 5288.32
+        *b: 5.49900360528034
+        *qval: 0.0
+      *BdRF1_1
+        *TPMs: 8733.53, 6645.42, 10568.0
+        *b: 4.82316613823172
+        *qval: 3.10675111248451e-302
+  *mycoplasma_report.tsv --> functionally the same aside from difference in row ordering
+
+Overall: all results are functionally the same aside from topTranscripts.tsv in which there are 2 unique genes per pipeline run. 
+
+TO DO: look into what causes the discrepancy for topTranscripts.tsv. Once that is resolved (or deemed not important), complete the rest of the kallisto index files in Docker for the referenceFile directory. 
+Also look through the rest of the notes to see what else needs to be noted/implemented.
+
+  
+
+
++------------------------------------------------------------------------------------------------------+
+FOR QUICK REFERENCE:
+docker rmi rnaseqpipeline
+docker build -t rnaseqpipeline:latest .
+docker run --rm -it \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Applications/ngs/pipelines/rnaseq/referenceFiles:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/Mutu_siCNOT-Zta:/data/Mutu_siCNOT-Zta:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/output_docker_4_13:/data/output_docker_4_13" \
+  -w /work \
+  rnaseqpipeline:latest \
+  bash
+conda activate rnaseqpipeline
+ln -s "$CONDA_PREFIX/bin/gsea-cli" "$CONDA_PREFIX/bin/gsea-cli.sh"
+python metadata.py /data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE /data/output_docker_4_13/
+python rnaseq.py /data/output_docker_4_13/ethan_metadata_040132026_185501.tsv /data/output_docker_4_13
 +------------------------------------------------------------------------------------------------------+

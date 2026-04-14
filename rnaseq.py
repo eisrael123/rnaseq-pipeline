@@ -311,7 +311,7 @@ def run_kallisto(fastq1, fastq2, sample_name, species_name, strandedness, result
 
     # Configure the kallisto command based on PE/SE and strandedness
     kallisto_cmd = [
-        "kallisto", "quant", "-b", "0", "-i", str(kallisto_index),
+        "kallisto", "quant", "-b", "100", "-i", str(kallisto_index),
         "-o", str(kallisto_dir), "-t", "10"
     ]
     if stranded_option:

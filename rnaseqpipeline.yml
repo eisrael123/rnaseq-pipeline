@@ -41,12 +41,13 @@ dependencies:
 
   # R + libs — deseq2_analysis_ercc.R (DESeq2, ggplot2, ggrepel, reshape2)
   # and sleuth_analysis_ercc.R (sleuth, dplyr)
+  # sleuth still calls dplyr::select_(); dplyr >=1.2 makes select_() defunct → pin <1.2
   - r-base
   - bioconductor-deseq2
   - r-ggplot2
   - r-ggrepel
   - r-reshape2
-  - r-dplyr
+  - r-dplyr >=1.0,<1.2
   - r-sleuth
 
   # Convenience tools

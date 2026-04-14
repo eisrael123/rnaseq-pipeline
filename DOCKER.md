@@ -86,26 +86,36 @@ Replace `/path/on/your/computer/referenceFiles` with the real folder that contai
 
 ## 4. Other hardcoded paths (needed for a *working* full pipeline)
 
-The Python scripts assume additional absolute locations that **do not exist** in a stock Linux container unless you create them:
+### `scripts/` path (R, Perl, extra Python)
 
-| Topic | What the code expects | Practical approach |
-|--------|------------------------|---------------------|
-| R and Perl helpers | Paths under `/Applications/ngs/pipelines/rnaseq/scripts/` (e.g. DESeq2/Sleuth R scripts, `reform_*.py`, Perl splice script) | **Recommended:** extend the `Dockerfile` with something like: `RUN mkdir -p /Applications/ngs/pipelines/rnaseq && ln -sfn /work /Applications/ngs/pipelines/rnaseq/scripts` so `/work` (where the image copies your repo) is also visible at the path the pipeline uses. |
-| STAR temporary directory | A Mac-specific path under `/Users/mac14/Desktop/...` | **Recommended:** `RUN mkdir -p "/Users/mac14/Desktop/Misc_Desktop_Folders"` in the `Dockerfile` so STAR can write temp files inside the container. |
+`rnaseq.py` expects helper files under **`/Applications/ngs/pipelines/rnaseq/scripts/`**, including:
 
-Without these, alignment or downstream R steps can fail even if references mount correctly.
+| File (examples) | Used for |
+|-----------------|----------|
+| `deseq2_analysis_ercc.R` | DESeq2 |
+| `sleuth_analysis_ercc.R` | Sleuth |
+| `reform_deseq2.py`, `reform_sleuth.py` | Excel reform steps |
+| `mycoplasma_check.py`, `volcano.py` | Optional checks / plots |
+| `splice_junction_strand_separator.pl` | SJ.out.tab → BED (Perl) |
+
+The **`Dockerfile` in this repo** creates a symlink so **`/Applications/ngs/pipelines/rnaseq/scripts` → `/work`**, where `COPY . /work` puts your repo. Rebuild the image after changing the Dockerfile.
+
+### Reference paths inside R
+
+`sleuth_analysis_ercc.R` also hardcodes mart / ERCC paths under **`/Applications/ngs/pipelines/rnaseq/referenceFiles/...`**. Keep mounting **`referenceFiles`** at that path (section 3) so R sees the same files as Python.
+
+### STAR temporary directory
+
+- **Linux (including Docker):** `rnaseq.py` uses **`/tmp/rnaseqPipelineTmpDir_<sample>`** — no `/Users/...` path is required in the container.
+- **macOS (`Darwin`):** `rnaseq.py` uses **`/Users/mac14/Desktop/Misc_Desktop_Folders/...`** for STAR `--outTmpDir`; that folder is created if missing when you run on a Mac.
+
+Without the **`scripts`** symlink (or an equivalent mount), DESeq2/Sleuth/reform/Perl steps fail even if references and alignment work.
 
 ### Conda environment check
 
-`metadata.py` and `rnaseq.py` require the environment name **`rnaseqpipeline`** via `CONDA_DEFAULT_ENV`. The image puts that env on `PATH`, but **`CONDA_DEFAULT_ENV` may be unset** when you run commands.
+`metadata.py` and `rnaseq.py` require the environment name **`rnaseqpipeline`** via `CONDA_DEFAULT_ENV`. The **`Dockerfile`** sets **`CONDA_DEFAULT_ENV`** and **`CONDA_AUTO_ACTIVATE_BASE=false`** so `python` on `PATH` stays the pipeline env (interactive bash in miniconda images often activates `base` otherwise).
 
-**Recommended:** add to the `Dockerfile` (or pass when running):
-
-```dockerfile
-ENV CONDA_DEFAULT_ENV=rnaseqpipeline
-```
-
-Or on the command line:
+If you run without that image, pass:
 
 ```bash
 -e CONDA_DEFAULT_ENV=rnaseqpipeline
