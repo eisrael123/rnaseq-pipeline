@@ -1,0 +1,5 @@
+*.txt
+ethan_copy_rnaseqpipeline.yml
+DOCKER.md
+folder_inventory_compare.py
+results_compare.py

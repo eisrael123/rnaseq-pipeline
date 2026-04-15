@@ -22,6 +22,7 @@ import json
 import matplotlib.pyplot as plt
 from matplotlib import rcParams
 import re
+import argparse
 
 REQUIRED_ENV = "rnaseqpipeline"
 
@@ -34,8 +35,6 @@ if conda_env != REQUIRED_ENV:
         f"Please run:\n\n    conda activate {REQUIRED_ENV}\n\n"
     )
     sys.exit(1)
-
-REFERENCE_DIR = Path('/Applications/ngs/pipelines/rnaseq/referenceFiles')
 
 def setup_logging(results_dir):
     log_file = results_dir / "processing_log.tsv"
@@ -69,41 +68,6 @@ def log_total_time(start_time, results_dir):
         print(f"Total processing time logged: {formatted_time}")
     except Exception as e:
         print(f"Error writing total processing time to log file: {e}")
-
-# Ensure the correct number of arguments are provided
-if len(sys.argv) != 3:
-    print("Usage: rnaseq.py <metadata_file> <results>")
-    sys.exit(1)
-
-# Get the metadata file and results directory from the command line arguments
-metadata_file = sys.argv[1]
-results_dir = Path(sys.argv[2])
-
-# Read the metadata file
-metadata = pd.read_csv(metadata_file, sep='\t')
-
-# Verify required columns exist
-required_columns = ['Path Read 1', 'Path Read 2', 'Species', 'Sample name', 'Condition', 'Control?', 'Experiment name']
-missing_columns = [col for col in required_columns if col not in metadata.columns]
-if missing_columns:
-    print(f"Error: Missing columns in metadata file: {', '.join(missing_columns)}")
-    sys.exit(1)
-
-# Extract the species name from the metadata file
-species_name = metadata['Species'].iloc[0]
-print(f"Species name: {species_name}")
-
-# Path to the mart_file
-mart_file = REFERENCE_DIR / species_name / "biomart" / f"{species_name}.mart_export.txt"
-
-# Create the results directory if it doesn't exist
-results_dir.mkdir(parents=True, exist_ok=True)
-
-# Start the timer
-start_time = time.time()
-
-# Log the total processing time
-log_total_time(start_time, results_dir)
 
 def run_fastqc(fastq1, fastq2, results_dir):
     """Run FastQC on FASTQ files."""
@@ -287,12 +251,22 @@ def run_kallisto(fastq1, fastq2, sample_name, species_name, strandedness, result
     kallisto_dir = results_dir / "kallisto" / sample_name / output_subdir
     kallisto_dir.mkdir(parents=True, exist_ok=True)
 
-    # Use the appropriate kallisto index based on species or contaminants
-    kallisto_index = (
-        REFERENCE_DIR / species_name / "kallisto" / "all_contaminants.kallisto.idx"
-        if is_contaminant_run
-        else REFERENCE_DIR / species_name / "kallisto" / f"{species_name}.kallisto.idx"
-    )
+    # Use the appropriate kallisto index based on species or contaminants.
+    # On macOS (local runs), use the ORIGINAL idx that was built. On Docker, use the new idx.
+    if is_contaminant_run:
+        if platform.system() == "Darwin": #Mac
+            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / "all_contaminants_ORIGINAL.kallisto.idx"
+            print(f"Kallisto contaminants: using index {kallisto_index}")
+        else: #Docker
+            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / "all_contaminants.kallisto.idx"
+            print(f"Kallisto contaminants: using index {kallisto_index}")
+    else:
+        if platform.system() == "Darwin": #Mac
+            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / f"{species_name}_ORIGINAL.kallisto.idx"
+            print(f"Kallisto species: using index {kallisto_index}")
+        else: #Docker
+            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / f"{species_name}.kallisto.idx"
+            print(f"Kallisto species: using index {kallisto_index}")
 
     # Configure strandedness option for kallisto
     if strandedness in [
@@ -535,14 +509,13 @@ def run_deseq2_analysis(results_dir, species_name):
     - results_dir (Path): Path object to the results directory containing input files.
     """
     # Define the path to the R script
-    r_script = "/Applications/ngs/pipelines/rnaseq/scripts/deseq2_analysis_ercc.R"  # Adjust if R script is located elsewhere
-    r_script = Path(r_script)  # Convert r_script to a Path object
+    r_script = (scripts / "deseq2_analysis_ercc.R").resolve()
     if not r_script.exists():
         print("R script not found.")
         sys.exit(1)
 
-    # Build the command to execute the R script
-    cmd = f"Rscript {str(r_script)} {str(results_dir)} {species_name}"
+    # Use absolute path: subprocess uses cwd=results_dir, so a relative R path would be wrong.
+    cmd = f"Rscript {str(r_script)} {str(Path(results_dir).resolve())} {species_name}"
     print(f"Running DESeq2 analysis with command: {cmd}")  # Debug statement
 
     # Execute the R script
@@ -605,14 +578,13 @@ def create_sleuth_metadata(metadata_file, sleuth_dir, species_name, results_dir)
 
 def run_sleuth_analysis(results_dir, species_name):
     """Run Sleuth analysis using an R script."""
-    r_script_path = "/Applications/ngs/pipelines/rnaseq/scripts/sleuth_analysis_ercc.R"  # Adjust if the path differs
-    r_script_path = Path(r_script_path)  # Convert r_script_path to a Path object
+    r_script_path = (scripts / "sleuth_analysis_ercc.R").resolve()
     if not r_script_path.exists():
         print(f"R script not found: {r_script_path}")
         sys.exit(1)
 
     # Build the command to execute the R script
-    command = ["Rscript", str(r_script_path), str(results_dir), species_name]
+    command = ["Rscript", str(r_script_path), str(Path(results_dir).resolve()), species_name]
     print(f"Running Sleuth analysis with command: {' '.join(command)}")  # Debug statement
 
     # Execute the R script
@@ -775,11 +747,14 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
     gsea_cls_file = results_dir / "gsea" / "test.cls"
     gsea_results_dir = results_dir / "gsea"
     gsea_reference_dir = REFERENCE_DIR / species_name / "GSEA"
+    gsea_cli_path = shutil.which("gsea-cli") or shutil.which("gsea-cli.sh")
+    if not gsea_cli_path:
+        raise FileNotFoundError("Neither gsea-cli nor gsea-cli.sh was found in PATH.")
 
     for gmt_file in gsea_reference_dir.glob("*.gmt"):
         rpt_label = gmt_file.stem
         command = [
-            "gsea-cli.sh", "GSEA",
+            gsea_cli_path, "GSEA",
             "-res", str(gsea_input_file),
             "-cls", str(gsea_cls_file),
             "-gmx", str(gmt_file),
@@ -853,10 +828,10 @@ def run_gsea_preranked(rnk_file, gsea_results_dir, gmt_file):
     # Define the output label for the pre-ranked analysis
     rpt_label = f"preranked_{gmt_file.stem}"
 
-    # Ensure gsea-cli.sh is available
-    gsea_cli_path = shutil.which("gsea-cli.sh")
+    # Ensure a GSEA CLI executable is available
+    gsea_cli_path = shutil.which("gsea-cli") or shutil.which("gsea-cli.sh")
     if not gsea_cli_path:
-        raise FileNotFoundError("gsea-cli.sh not found in PATH. Please ensure it is installed and accessible.")
+        raise FileNotFoundError("Neither gsea-cli nor gsea-cli.sh was found in PATH. Please ensure GSEA is installed and accessible.")
 
     # Construct the GSEA pre-ranked command
     cmd = [
@@ -1318,7 +1293,7 @@ def reform_deseq2_results(results_dir):
     Parameters:
     - results_dir (str or Path): Path to the results directory.
     """
-    script_path = "/Applications/ngs/pipelines/rnaseq/scripts/reform_deseq2.py"
+    script_path = scripts / "reform_deseq2.py"
     try:
         subprocess.run(["python", str(script_path), str(results_dir)], check=True)
         print("Reformed DESeq2 results to Excel format.")
@@ -1441,7 +1416,7 @@ def reformat_sleuth_results(results_dir):
     Parameters:
     - results_dir (str or Path): Path to the results directory.
     """
-    script_path = "/Applications/ngs/pipelines/rnaseq/scripts/reform_sleuth.py"
+    script_path = scripts / "reform_sleuth.py"
     try:
         subprocess.run(["python", str(script_path), str(results_dir)], check=True)
         print("Reformed Sleuth results to Excel format.")
@@ -1456,7 +1431,7 @@ def check_mycoplasma_sequences(results_dir):
     Parameters:
     - results_dir (str or Path): Path to the results directory.
     """
-    script_path = "/Applications/ngs/pipelines/rnaseq/scripts/mycoplasma_check.py"
+    script_path = scripts / "mycoplasma_check.py"
     try:
         subprocess.run(["python", str(script_path), str(results_dir)], check=True)
         print("Mycoplasma sequences check completed.")
@@ -1471,7 +1446,7 @@ def prepare_volcano(results_dir):
     Parameters:
     - results_dir (str or Path): Path to the results directory.
     """
-    script_path = "/Applications/ngs/pipelines/rnaseq/scripts/volcano.py"
+    script_path = scripts / "volcano.py"
     try:
         subprocess.run(["python", str(script_path), str(results_dir)], check=True)
         print("Volcano plots prepared.")
@@ -1492,7 +1467,7 @@ def convert_SJtab_to_bed(sample_name, results_dir):
     sjtab_files = list(star_dir.glob("*.tab"))
 
     for sjtab_file in sjtab_files:
-        cmd = f"perl /Applications/ngs/pipelines/rnaseq/scripts/splice_junction_strand_separator.pl {sjtab_file}"
+        cmd = f"perl {scripts / 'splice_junction_strand_separator.pl'} {sjtab_file}"
         subprocess.run(cmd, shell=True, check=True)
         print(f"Converted {sjtab_file} to BED format")
 
@@ -1628,9 +1603,6 @@ def summarize_alignments(results_dir):
     with open(summary_file, 'w') as f:
         for row in summary_data:
             f.write("\t".join(row) + "\n")
-
-# Call the function to generate the summary
-summarize_alignments(results_dir)
 
 def summarize_transcript_coverage(results_dir, sample_names, species_name):
     output_file = results_dir / "transcriptCoverage.tsv"
@@ -2319,12 +2291,21 @@ def process_sample(sample_name, fastq1, fastq2):
 
 def main():
     """Main function to process all samples."""
-    if len(sys.argv) != 3:
-        print("Usage: python rnaseq.py <metadata_file> <results_dir>")
+    if len(sys.argv) != 5:
+        print(
+            "Usage: python rnaseq.py <metadata_file> <reference_directory_path> "
+            "<scripts_path> <results>"
+        )
         sys.exit(1)
 
-    metadata_file = sys.argv[1]
-    results_dir = Path(sys.argv[2])
+    global REFERENCE_DIR, scripts, results_dir, species_name
+
+    # Canonical paths so relative CLI args behave the same regardless of cwd / subprocess cwd.
+    metadata_file = Path(sys.argv[1]).resolve()
+    REFERENCE_DIR = Path(sys.argv[2]).resolve()
+    scripts = Path(sys.argv[3]).resolve()
+    results_dir = Path(sys.argv[4]).resolve()
+    results_dir.mkdir(parents=True, exist_ok=True)
 
     # Set up logging
     setup_logging(results_dir)
