@@ -779,6 +779,223 @@ Match for: mycoplasma_report.tsv
 
 Same exact results as the Docker rerun, so the results are consistent across machine, just not between Docker and local. 
 
+While Erik looks at the files, another thing to do is to manually reorder the rows so that the other content discrepancies can be resolved. 
+Getting the top 20000 transcripts for Erik: 
+'''
+sleuth_results_wald_transcripts_df = pd.read_csv('/Users/mac14/ethan/rnaseq/data/output_docker_4_14/2_Analysis/05_differential_expression/sleuth/prep_files/Mutu_siCNOT-Zta_sleuth_results_wald_transcripts.tsv', sep='\t')
+top_transcripts_df = sleuth_results_wald_transcripts_df.nsmallest(20000, 'qval')
+top_transcripts_df.to_csv('./topTranscripts_20000_Docker.tsv', sep='\t', index=False)
+
+sleuth_results_wald_transcripts_df = pd.read_csv('/Users/mac14/ethan/rnaseq/data/output_4_14/2_Analysis/05_differential_expression/sleuth/prep_files/Mutu_siCNOT-Zta_sleuth_results_wald_transcripts.tsv', sep='\t')
+top_transcripts_df = sleuth_results_wald_transcripts_df.nsmallest(20000, 'qval')
+top_transcripts_df.to_csv('./topTranscripts_20000.tsv', sep='\t', index=False)
+'''
+Getting every transcript: 
+'''
+sleuth_results_wald_transcripts_df = pd.read_csv('/Users/mac14/ethan/rnaseq/data/output_docker_4_14/2_Analysis/05_differential_expression/sleuth/prep_files/Mutu_siCNOT-Zta_sleuth_results_wald_transcripts.tsv', sep='\t')
+top_transcripts_df = sleuth_results_wald_transcripts_df.sort_values(by="qval", ascending=True)
+top_transcripts_df.to_csv('./topTranscripts_allgenes_Docker.tsv', sep='\t', index=False)
+
+sleuth_results_wald_transcripts_df = pd.read_csv('/Users/mac14/ethan/rnaseq/data/output_4_14/2_Analysis/05_differential_expression/sleuth/prep_files/Mutu_siCNOT-Zta_sleuth_results_wald_transcripts.tsv', sep='\t')
+top_transcripts_df = sleuth_results_wald_transcripts_df.sort_values(by="qval", ascending=True)
+top_transcripts_df.to_csv('./topTranscripts_allgenes.tsv', sep='\t', index=False)
+'''
+
++-------------+
+| Apr 21 2026 |
++-------------+ 
+
+First gonna try resolving the following mismatches in output before running the bigger file: 
+*results.html, aligntmentSummary.tsv, mycoplasma_report.tsv --> fix ordering of rows of ORIGINAL run outside of docker. The docker output consistently orders it by cntl_{run}, then test_{run} (Cntl1, Cntl2, Cntl3, Zta1, Zta2, Zta3), while normal output has mixed ordering (Cntl3, Zta1, Cntl2, Zta2, Cntl1, Zta3) which looks worse. 
+"""
+def sample_sort_key(name: str):
+    # natural sort on trailing integer if present
+    m = re.search(r"(\d+)(?!.*\d)", name)
+    n = int(m.group(1)) if m else 10**9
+    return (re.sub(r"\d+", "", name), n, name)
+"""
+in main():
+from 
+"""
+sample_names = metadata['Sample name'].unique().tolist()
+"""
+to:
+"""
+meta_order = (
+    metadata[["Sample name", "Control?"]]
+    .drop_duplicates()
+    .assign(
+        _group=lambda d: d["Control?"].str.strip().str.lower().map(lambda x: 0 if x == "yes" else 1)
+    )
+    .sort_values(
+        by=["_group", "Sample name"],
+        key=lambda s: s.map(sample_sort_key) if s.name == "Sample name" else s
+    )
+)
+sample_names = meta_order["Sample name"].tolist()
+"""
+also changed STAR to read files by sample index rather the glob *star.
+Instead of “discover folders and use whatever order the filesystem gives,” the change:
+*build sample_names once from metadata (ordered)
+*loop for sample_name in sample_names
+*read results_dir / "star" / sample_name / f"{sample_name}_Log.final.out"
+
+
+*testBAMs.txt and controlBAMS.txt --> only difference is path prefix, so I'll set the path prefix in docker the same as the computer. (TO BE IMPLEMENTED LATER WHEN THE DOCKER RUN IS TEST ON THE LARGER FILE)
+
+
+testing by running output_4_21 and comparing to output_docker_4_14:
+'''
+python metadata.py ../data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE ../data/output_4_21/
+python rnaseq.py ../data/output_4_21/ethan_metadata_04212026_221720.tsv ../referenceFiles . ../data/output_4_21/
+'''
+
+'''
+(rnaseqpipeline) Mac14s-MacBook-Pro:scripts mac14$ python results_compare.py --folders /Users/mac14/ethan/rnaseq/data/output_docker_4_14/3_Results/09_documents /Users/mac14/ethan/rnaseq/data/output_4_21/3_Results/09_documents
+'''
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl3_cntl3.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta3_test3.tsv
+Discrepancy in content for: testBAMs.txt
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta2_test2.tsv
+Discrepancy in content for: controlBAMs.txt
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl2_cntl2.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl1_cntl1.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta1_test1.tsv
+Discrepancy in content for: topGenes.tsv
+Match for: alignmentSummary.tsv
+Match for: transcriptCoverage.tsv
+Discrepancy in content for: topTranscripts.tsv
+Match for: top_gene_tpms.tsv
+Discrepancy in content for: mycoplasma_report.tsv
+
++-------------+
+| Apr 22 2026 |
++-------------+ 
+
+Continuing on...
+
+alignmentSummary.tsv got reordered but mycoplasma_report.tsv is did not.
+Adding a manual reordering block right after check_mycoplasma_sequences(results_dir):
+"""
+# Force deterministic row order in mycoplasma report.
+    mycoplasma_report_path = results_dir / "mycoplasma_report.tsv"
+    if mycoplasma_report_path.exists():
+        mycoplasma_df = pd.read_csv(mycoplasma_report_path, sep="\t")
+        if "Sample" in mycoplasma_df.columns:
+            ordered_parts = []
+            for sample_name in sample_names:
+                sample_rows = mycoplasma_df[mycoplasma_df["Sample"] == sample_name]
+                if not sample_rows.empty:
+                    ordered_parts.append(sample_rows)
+            remaining_rows = mycoplasma_df[~mycoplasma_df["Sample"].isin(sample_names)]
+            if not remaining_rows.empty:
+                ordered_parts.append(remaining_rows)
+            if ordered_parts:
+                mycoplasma_df = pd.concat(ordered_parts, ignore_index=True)
+                mycoplasma_df.to_csv(mycoplasma_report_path, sep="\t", index=False)
+"""
+running the pipeline again: 
+'''
+python metadata.py ../data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE ../data/output_4_22/
+python rnaseq.py ../data/output_4_22/ethan_metadata_04222026_090733.tsv ../referenceFiles . ../data/output_4_22/
+'''
+'''
+(rnaseqpipeline) Mac14s-MacBook-Pro:scripts mac14$ python results_compare.py --folders /Users/mac14/ethan/rnaseq/data/output_docker_4_14/3_Results/09_documents /Users/mac14/ethan/rnaseq/data/output_4_22/3_Results/09_documents
+'''
+Filenames of both folders are the same (excluding metadata): True
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl3_cntl3.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta3_test3.tsv
+Discrepancy in content for: testBAMs.txt
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta2_test2.tsv
+Discrepancy in content for: controlBAMs.txt
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl2_cntl2.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl1_cntl1.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta1_test1.tsv
+Discrepancy in content for: topGenes.tsv
+Match for: alignmentSummary.tsv
+Match for: transcriptCoverage.tsv
+Discrepancy in content for: topTranscripts.tsv
+Match for: top_gene_tpms.tsv
+Match for: mycoplasma_report.tsv
+
+alignmentSummary.tsv and mycoplasma_report.tsv are now matched, and those consistencies are reflected in results.html!
+
++-------------+
+| Apr 23 2026 |
++-------------+ 
+
+testing on the larger dataset...
+
+mac run: 
+'''
+python metadata.py ../data/Mutu_siCNOT-Zta_full_dataset hg38plusAkataInverted ethan PE ../data/output_full_dataset_4_22/
+'''
+Oh no! The metadata file was not generated because the FASTQ files directory name should be in the format "model_experiment", with only ONE underscore included in the directory name. Try again!
+--> renaming to ../data/full_dataset/Mutu_siCNOT-Zta
+'''
+python metadata.py ../data/full_dataset/Mutu-siCNOT-Zta hg38plusAkataInverted ethan PE ../data/output_full_dataset_4_22/
+python rnaseq.py ../data/output_full_dataset_4_22/ethan_metadata_04222026_231536.tsv ../referenceFiles . ../data/output_full_dataset_4_22/
+'''
+
+docker run (setting the path prefix in docker the same as the computer): 
+'''
+docker rmi rnaseqpipeline
+docker build -t rnaseqpipeline:latest .
+docker run --rm -it \
+  -v "/Users/mac14/ethan/rnaseq/scripts:/Users/mac14/ethan/rnaseq/scripts:ro" \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Users/mac14/ethan/rnaseq/referenceFiles:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/full_dataset/Mutu_siCNOT-Zta:/Users/mac14/ethan/rnaseq/data/full_dataset/Mutu_siCNOT-Zta:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/output_docker_full_dataset_4_22:/Users/mac14/ethan/rnaseq/data/output_full_dataset_4_22" \
+  -w "/Users/mac14/ethan/rnaseq/scripts" \
+  rnaseqpipeline:latest \
+  bash
+conda activate rnaseqpipeline
+python metadata.py ../data/full_dataset/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE ../data/output_full_dataset_4_22/
+python rnaseq.py ../data/output_full_dataset_4_22/ethan_metadata_04232026_131211.tsv ../referenceFiles . ../data/output_full_dataset_4_22/
+'''
+IMPORTANT CATCH:
+metadata.py currently hardcodes reference lookup at:
+/Applications/ngs/pipelines/rnaseq/referenceFiles
+
+Changing metadata.py to input reference_dir as an argument, changing reference_name arg to species_name, changing the README, and rebuilding the image and running it again (I also cleaned up the argument names for metadata.py, refer to the commit to see the changes): 
+'''
+docker rmi rnaseqpipeline
+docker build -t rnaseqpipeline:latest .
+docker run --rm -it \
+  -v "/Users/mac14/ethan/rnaseq/scripts:/Users/mac14/ethan/rnaseq/scripts:ro" \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Users/mac14/ethan/rnaseq/referenceFiles:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/full_dataset/Mutu_siCNOT-Zta:/Users/mac14/ethan/rnaseq/data/full_dataset/Mutu_siCNOT-Zta:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/output_docker_full_dataset_4_22:/Users/mac14/ethan/rnaseq/data/output_full_dataset_4_22" \
+  -w "/Users/mac14/ethan/rnaseq/scripts" \
+  rnaseqpipeline:latest \
+  bash
+conda activate rnaseqpipeline
+python metadata.py ../data/full_dataset/Mutu_siCNOT-Zta ../referenceFiles hg38plusAkataInverted ethan PE ../data/output_full_dataset_4_22/
+python rnaseq.py ../data/output_full_dataset_4_22/ethan_metadata_04232026_174629.tsv ../referenceFiles . ../data/output_full_dataset_4_22/
+'''
+--> Error: ERCC genes file not found: /Applications/ngs/pipelines/rnaseq/referenceFiles/hg38plusAkataInverted/annotations/ERCC92_genes.txt. read t
+
++-------------+
+| Apr 23 2026 |
++-------------+
+
+There are still hardcoded paths on deseq2_analysis_ercc.R and sleuth_analysis_ercc.R that reference '/Applications/ngs/pipelines/rnaseq/referenceFiles'.
+Making those as input the reference file argument of rnaseq.py and updating its usage on rnaseq.py, and moving all pipeline scripts into a folder called 'scripts', then running the pipeline again:   
+'''
+docker rmi rnaseqpipeline
+docker build -t rnaseqpipeline:latest .
+docker run --rm -it \
+  -v "/Users/mac14/ethan/rnaseq/scripts:/Users/mac14/ethan/rnaseq/scripts:ro" \
+  -v "/Users/mac14/ethan/rnaseq/referenceFiles:/Users/mac14/ethan/rnaseq/referenceFiles:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/full_dataset/Mutu_siCNOT-Zta:/Users/mac14/ethan/rnaseq/data/full_dataset/Mutu_siCNOT-Zta:ro" \
+  -v "/Users/mac14/ethan/rnaseq/data/output_docker_full_dataset_4_22:/Users/mac14/ethan/rnaseq/data/output_full_dataset_4_22" \
+  -w "/Users/mac14/ethan/rnaseq/scripts" \
+  rnaseqpipeline:latest \
+  bash
+conda activate rnaseqpipeline
+python metadata.py ../data/full_dataset/Mutu_siCNOT-Zta ../referenceFiles hg38plusAkataInverted ethan PE ../data/output_full_dataset_4_22/
+python rnaseq.py ../data/output_full_dataset_4_22/ethan_metadata_04232026_174629.tsv ../referenceFiles . ../data/output_full_dataset_4_22/
+'''
 +------------------------------------------------------------------------------------------------------+
 FOR QUICK REFERENCE:
 docker rmi rnaseqpipeline
@@ -791,7 +1008,6 @@ docker run --rm -it \
   rnaseqpipeline:latest \
   bash
 conda activate rnaseqpipeline
-ln -s "$CONDA_PREFIX/bin/gsea-cli" "$CONDA_PREFIX/bin/gsea-cli.sh"
 python metadata.py /data/Mutu_siCNOT-Zta hg38plusAkataInverted ethan PE /data/output_docker_4_14/
 python rnaseq.py /data/output_docker_4_14/ethan_metadata_04142026_215115.tsv /data/output_docker_4_14
 +------------------------------------------------------------------------------------------------------+

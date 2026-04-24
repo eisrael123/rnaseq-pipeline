@@ -36,6 +36,12 @@ if conda_env != REQUIRED_ENV:
     )
     sys.exit(1)
 
+def sample_sort_key(name: str):
+    # natural sort on trailing integer if present
+    m = re.search(r"(\d+)(?!.*\d)", name)
+    n = int(m.group(1)) if m else 10**9
+    return (re.sub(r"\d+", "", name), n, name)
+
 def setup_logging(results_dir):
     log_file = results_dir / "processing_log.tsv"
     sys.stdout = open(log_file, 'w')
@@ -501,7 +507,7 @@ def generate_counts_matrix(samples, species, results_dir):
     counts_matrix.to_csv(counts_matrix_file, sep='\t')
     print(f"Counts matrix saved to {counts_matrix_file}")
 
-def run_deseq2_analysis(results_dir, species_name):
+def run_deseq2_analysis(results_dir, species_name, reference_dir):
     """
     Execute the DESeq2 analysis using the deseq2_analysis_ercc.R script.
 
@@ -515,13 +521,19 @@ def run_deseq2_analysis(results_dir, species_name):
         sys.exit(1)
 
     # Use absolute path: subprocess uses cwd=results_dir, so a relative R path would be wrong.
-    cmd = f"Rscript {str(r_script)} {str(Path(results_dir).resolve())} {species_name}"
-    print(f"Running DESeq2 analysis with command: {cmd}")  # Debug statement
+    cmd = [
+        "Rscript",
+        str(r_script),
+        str(Path(results_dir).resolve()),
+        species_name,
+        str(Path(reference_dir).resolve()),
+    ]
+    print(f"Running DESeq2 analysis with command: {' '.join(cmd)}")  # Debug statement
 
     # Execute the R script
     try:
         # Run from results_dir so any implicit R outputs (e.g. Rplots.pdf) land there.
-        subprocess.run(cmd, shell=True, check=True, cwd=str(results_dir))
+        subprocess.run(cmd, check=True, cwd=str(results_dir))
         print("DESeq2 analysis completed successfully.")
     except subprocess.CalledProcessError as e:
         print(f"Error running DESeq2 analysis: {e}")
@@ -576,7 +588,7 @@ def create_sleuth_metadata(metadata_file, sleuth_dir, species_name, results_dir)
     sleuth_metadata.to_csv(sleuth_metadata_file, sep='\t', index=False)
     print(f"Sleuth metadata file saved to {sleuth_metadata_file}")
 
-def run_sleuth_analysis(results_dir, species_name):
+def run_sleuth_analysis(results_dir, species_name, reference_dir):
     """Run Sleuth analysis using an R script."""
     r_script_path = (scripts / "sleuth_analysis_ercc.R").resolve()
     if not r_script_path.exists():
@@ -584,7 +596,13 @@ def run_sleuth_analysis(results_dir, species_name):
         sys.exit(1)
 
     # Build the command to execute the R script
-    command = ["Rscript", str(r_script_path), str(Path(results_dir).resolve()), species_name]
+    command = [
+        "Rscript",
+        str(r_script_path),
+        str(Path(results_dir).resolve()),
+        species_name,
+        str(Path(reference_dir).resolve()),
+    ]
     print(f"Running Sleuth analysis with command: {' '.join(command)}")  # Debug statement
 
     # Execute the R script
@@ -1549,7 +1567,7 @@ def report_top_gene_tpms(results_dir):
     top_genes_df.to_csv(output_path, sep='\t', index=False)
     print(f"Top genes with the highest TPM values saved to {output_path}")
 
-def summarize_alignments(results_dir):
+def summarize_alignments(results_dir, sample_names):
     summary_file = results_dir / "alignmentSummary.tsv"
     summary_data = []
 
@@ -1566,38 +1584,37 @@ def summarize_alignments(results_dir):
     ]
     summary_data.append(headers)
 
-    # Iterate over each sample directory
-    for sample_dir in results_dir.glob("star/*"):
-        if sample_dir.is_dir():
-            sample_name = sample_dir.name
-            log_file = sample_dir / f"{sample_name}_Log.final.out"
+    # Iterate over sample_names in caller-provided order
+    for sample_name in sample_names:
+        sample_dir = results_dir / "star" / sample_name
+        log_file = sample_dir / f"{sample_name}_Log.final.out"
 
-            if log_file.exists():
-                with open(log_file, 'r') as f:
-                    log_content = f.read()
+        if log_file.exists():
+            with open(log_file, 'r') as f:
+                log_content = f.read()
 
-                # Extract relevant information using regex
-                num_input_reads = re.search(r"Number of input reads\s+\|\s+(\d+)", log_content).group(1)
-                avg_input_read_length = re.search(r"Average input read length\s+\|\s+(\d+)", log_content).group(1)
-                avg_mapped_length = re.search(r"Average mapped length\s+\|\s+(\d+)", log_content).group(1)
-                uniquely_mapped_reads_num = re.search(r"Uniquely mapped reads number\s+\|\s+(\d+)", log_content).group(1)
-                reads_mapped_multiple_loci = re.search(r"Number of reads mapped to multiple loci\s+\|\s+(\d+)", log_content).group(1)
-                reads_mapped_too_many_loci = re.search(r"Number of reads mapped to too many loci\s+\|\s+(\d+)", log_content).group(1)
-                uniquely_mapped_percentage = float(re.search(r"Uniquely mapped reads %\s+\|\s+([\d\.]+)", log_content).group(1))
-                multiple_mapped_percentage = float(re.search(r"% of reads mapped to multiple loci\s+\|\s+([\d\.]+)", log_content).group(1))
-                mapped_percentage = uniquely_mapped_percentage + multiple_mapped_percentage
+            # Extract relevant information using regex
+            num_input_reads = re.search(r"Number of input reads\s+\|\s+(\d+)", log_content).group(1)
+            avg_input_read_length = re.search(r"Average input read length\s+\|\s+(\d+)", log_content).group(1)
+            avg_mapped_length = re.search(r"Average mapped length\s+\|\s+(\d+)", log_content).group(1)
+            uniquely_mapped_reads_num = re.search(r"Uniquely mapped reads number\s+\|\s+(\d+)", log_content).group(1)
+            reads_mapped_multiple_loci = re.search(r"Number of reads mapped to multiple loci\s+\|\s+(\d+)", log_content).group(1)
+            reads_mapped_too_many_loci = re.search(r"Number of reads mapped to too many loci\s+\|\s+(\d+)", log_content).group(1)
+            uniquely_mapped_percentage = float(re.search(r"Uniquely mapped reads %\s+\|\s+([\d\.]+)", log_content).group(1))
+            multiple_mapped_percentage = float(re.search(r"% of reads mapped to multiple loci\s+\|\s+([\d\.]+)", log_content).group(1))
+            mapped_percentage = uniquely_mapped_percentage + multiple_mapped_percentage
 
-                # Append the extracted data to the summary_data list
-                summary_data.append([
-                    sample_name,
-                    num_input_reads,
-                    avg_input_read_length,
-                    avg_mapped_length,
-                    uniquely_mapped_reads_num,
-                    reads_mapped_multiple_loci,
-                    reads_mapped_too_many_loci,
-                    f"{mapped_percentage:.2f}"
-                ])
+            # Append the extracted data to the summary_data list
+            summary_data.append([
+                sample_name,
+                num_input_reads,
+                avg_input_read_length,
+                avg_mapped_length,
+                uniquely_mapped_reads_num,
+                reads_mapped_multiple_loci,
+                reads_mapped_too_many_loci,
+                f"{mapped_percentage:.2f}"
+            ])
 
     # Write the summary data to the alignmentSummary.tsv file
     with open(summary_file, 'w') as f:
@@ -2293,8 +2310,8 @@ def main():
     """Main function to process all samples."""
     if len(sys.argv) != 5:
         print(
-            "Usage: python rnaseq.py <metadata_file> <reference_directory_path> "
-            "<scripts_path> <results>"
+            "Usage: python rnaseq.py <metadata_file> <reference_dir> "
+            "<scripts_dir> <results_dir>"
         )
         sys.exit(1)
 
@@ -2328,7 +2345,20 @@ def main():
     print(f"Species name: {species_name}")
 
     # Generate a list of unique sample names
-    sample_names = metadata['Sample name'].unique().tolist()
+    # sample_names = metadata['Sample name'].unique().tolist()
+    #NEW: order by Control and {number}, then Test and {number}
+    meta_order = (
+        metadata[["Sample name", "Control?"]]
+        .drop_duplicates()
+        .assign(
+            _group=lambda d: d["Control?"].str.strip().str.lower().map(lambda x: 0 if x == "yes" else 1)
+        )
+        .sort_values(
+            by=["_group", "Sample name"],
+            key=lambda s: s.map(sample_sort_key) if s.name == "Sample name" else s
+        )
+    )
+    sample_names = meta_order["Sample name"].tolist()
 
     # Group the metadata by 'Sample name' to handle paired-end data
     grouped_metadata = metadata.groupby('Sample name')
@@ -2371,7 +2401,7 @@ def main():
     generate_counts_matrix(sample_names, species_name, results_dir)
 
     # Run DESeq2 analysis
-    run_deseq2_analysis(results_dir, species_name)
+    run_deseq2_analysis(results_dir, species_name, REFERENCE_DIR)
 
     # Define Sleuth directory
     sleuth_dir = results_dir / "sleuth"
@@ -2390,7 +2420,7 @@ def main():
     create_sleuth_metadata(metadata_file, sleuth_dir, species_name, results_dir)
 
     # Run Sleuth analysis
-    run_sleuth_analysis(sleuth_dir, species_name)
+    run_sleuth_analysis(sleuth_dir, species_name, REFERENCE_DIR)
 
     # Check the number of replicates for each condition
     condition_counts = metadata.groupby('Condition')['Sample name'].nunique()
@@ -2471,6 +2501,22 @@ def main():
 
     # Check for mycoplasma sequences
     check_mycoplasma_sequences(results_dir)
+    # Force deterministic row order in mycoplasma report.
+    mycoplasma_report_path = results_dir / "mycoplasma_report.tsv"
+    if mycoplasma_report_path.exists():
+        mycoplasma_df = pd.read_csv(mycoplasma_report_path, sep="\t")
+        if "Sample" in mycoplasma_df.columns:
+            ordered_parts = []
+            for sample_name in sample_names:
+                sample_rows = mycoplasma_df[mycoplasma_df["Sample"] == sample_name]
+                if not sample_rows.empty:
+                    ordered_parts.append(sample_rows)
+            remaining_rows = mycoplasma_df[~mycoplasma_df["Sample"].isin(sample_names)]
+            if not remaining_rows.empty:
+                ordered_parts.append(remaining_rows)
+            if ordered_parts:
+                mycoplasma_df = pd.concat(ordered_parts, ignore_index=True)
+                mycoplasma_df.to_csv(mycoplasma_report_path, sep="\t", index=False)
 
     # Prepare volcano plot
     prepare_volcano(results_dir)
@@ -2489,7 +2535,7 @@ def main():
     report_top_gene_tpms(results_dir)
 
     # Summarize alignment statistics
-    summarize_alignments(results_dir)
+    summarize_alignments(results_dir, sample_names)
 
     # Summarize transcript coverage
     summarize_transcript_coverage(results_dir, sample_names, species_name)
