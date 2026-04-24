@@ -1,2 +1,7 @@
 *.txt
+*.tsv
+.DS_Store
+.Rhistory
+__pycache__/
+*.pyc
 
