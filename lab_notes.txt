@@ -994,8 +994,37 @@ docker run --rm -it \
   bash
 conda activate rnaseqpipeline
 python metadata.py ../data/full_dataset/Mutu_siCNOT-Zta ../referenceFiles hg38plusAkataInverted ethan PE ../data/output_full_dataset_4_22/
-python rnaseq.py ../data/output_full_dataset_4_22/ethan_metadata_04232026_174629.tsv ../referenceFiles . ../data/output_full_dataset_4_22/
+python rnaseq.py ../data/output_full_dataset_4_22/ethan_metadata_04242026_191611.tsv ../referenceFiles rnaseq_helper_scripts ../data/output_full_dataset_4_22/
 '''
+pipeline ran, comparing output: 
+'''
+(rnaseqpipeline) Mac14s-MacBook-Pro:scripts mac14$ python results_compare.py --folders /Users/mac14/ethan/rnaseq/data/output_docker_full_dataset_4_22/3_Results/09_documents /Users/mac14/ethan/rnaseq/data/output_full_dataset_4_22/3_Results/09_documents
+'''
+Filenames of both folders are the same (excluding metadata): True
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl3_cntl3.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta3_test3.tsv
+Match for: testBAMs.txt
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta2_test2.tsv
+Match for: controlBAMs.txt
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl2_cntl2.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Cntl1_cntl1.tsv
+Discrepancy in content for: terminal_output_Mutu_siCNOT1-Zta1_test1.tsv
+Discrepancy in content for: topGenes.tsv
+Match for: alignmentSummary.tsv
+Match for: transcriptCoverage.tsv
+Discrepancy in content for: topTranscripts.tsv
+Discrepancy in content for: top_gene_tpms.tsv
+Match for: mycoplasma_report.tsv
+
++-------------+
+| Apr 27 2026 |
++-------------+
+
+Updated README
+
+
+
+
 +------------------------------------------------------------------------------------------------------+
 FOR QUICK REFERENCE:
 docker rmi rnaseqpipeline
