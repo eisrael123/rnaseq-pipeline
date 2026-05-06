@@ -121,7 +121,7 @@ docker build -t rnaseqpipeline:latest .
 #### For rnaseq.py: 
 - `<metadata_file>`: The file path of generated metadata tsv file `output_dir/*.tsv`.
 - `<reference_dir>`: Same argument as metadata.py.
-- `<scripts_dir>`: The `./scripts` folder in this directory.
+- `<scripts_dir>`: The `./rnaseq_helper_scripts` folder in this directory.
 - `<results_dir>`: Same argument as metadata.py. 
 
 
@@ -146,7 +146,7 @@ Use the **container paths** (right side of every colon in each `-v` line) when c
 - `fastq_root_dir`: `/data/Model_Experiment`
 - `reference_dir`: `/data/referenceFiles`
 - `results_dir`: `/data/output`
-- `scripts_dir`: `/work/scripts` (if helper scripts are in a `scripts/` subfolder), or `/work` (if helper scripts stay in repo root)
+- `scripts_dir`: `/work/rnaseq_helper_scripts`
 
 Quick mapping examples from the command above:
 - `/path/on/your/computer/to/Model_Experiment` -> `/data/Model_Experiment`
@@ -176,7 +176,7 @@ Quick mapping examples from the command above:
    ```
    Example:
    ```bash
-   python rnaseq.py /data/output/ethan_metadata_04232026_174629.tsv /data/referenceFiles /work/scripts_for_rnaseq /data/output
+   python rnaseq.py /data/output/ethan_metadata_04232026_174629.tsv /data/referenceFiles /work/rnaseq_helper_scripts /data/output
    ```
  
 
@@ -203,7 +203,7 @@ Edit variables at the top of `run_pipeline_one_shot.sh` before running:
 ## Adding a New Species 
 
 ### Required files
-`rnaseq.py` and all helper scripts in `/rnaseq_helper_scripts` resolves files from `referenceFiles/<SPECIES>/...` using the species directory name itself.  
+`rnaseq.py` and all helper scripts in `/rnaseq_helper_scripts` resolve files from `referenceFiles/<SPECIES>/...` using the species directory name itself.  
 
 Make sure these files exist and follow this exact naming:
 

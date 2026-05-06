@@ -1022,7 +1022,18 @@ Match for: mycoplasma_report.tsv
 
 Updated README
 
++-------------+
+| May 5 2026 |
++-------------+
 
+Updating kallisto to 0.52.0:
+'''
+docker rmi rnaseqpipeline
+docker build -t rnaseqpipeline:latest .
+run_pipeline_one_shot.sh
+'''
+
+It ceased to run, not sure why. None of the logs reflect why. I'm dropping --rm, and fixing volcano.py font error:
 
 
 +------------------------------------------------------------------------------------------------------+

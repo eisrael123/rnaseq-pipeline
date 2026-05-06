@@ -15,7 +15,7 @@ dependencies:
   - fastqc=0.12.1
   - star=2.7.11b
   - samtools
-  - kallisto=0.51.1
+  - kallisto=0.52.0
   - rmats=4.3.0
 
   # Python libs (prefer conda for compiled deps)

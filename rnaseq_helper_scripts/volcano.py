@@ -1,12 +1,28 @@
 #!/usr/bin/env python3
 #volcano.py
 
-import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
+import logging
 from pathlib import Path
 import sys
+
+import matplotlib
+
+matplotlib.use("Agg")
+# Avoid findfont spam when Arial (or other UI fonts) are missing (e.g. Linux/Docker).
+matplotlib.rcParams.update(
+    {
+        "font.family": "sans-serif",
+        "font.sans-serif": ["DejaVu Sans", "Bitstream Vera Sans", "sans-serif"],
+    }
+)
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+sns.set_theme(style="whitegrid", font="DejaVu Sans")
 
 def generate_volcano_plot(results_dir):
     results_dir = Path(results_dir)

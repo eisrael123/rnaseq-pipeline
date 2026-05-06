@@ -17,7 +17,7 @@ EXPERIMENT_TYPE="<PE|SE>"
 CONTAINER_REFERENCE_DIR="/data/referenceFiles"
 CONTAINER_FASTQ_ROOT_DIR="/data/Model_Experiment"
 CONTAINER_OUTPUT_DIR="/data/output"
-CONTAINER_SCRIPTS_DIR="/work/scripts_for_rnaseq"
+CONTAINER_SCRIPTS_DIR="/work/rnaseq_helper_scripts"
 
 docker run --rm \
   -v "${HOST_REFERENCE_DIR}:${CONTAINER_REFERENCE_DIR}:ro" \
