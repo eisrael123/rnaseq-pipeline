@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# One-shot metadata + rnaseq pipeline run in Docker.
-# Edit these variables before running.
-
-IMAGE="rnaseqpipeline:latest"
+# Edit these pipeline variables before running.
 HOST_REFERENCE_DIR="/path/to/referenceFiles/on/your/computer"
 HOST_FASTQ_ROOT_DIR="/path/to/Model_Experiment/on/your/computer"
 HOST_OUTPUT_DIR="/path/to/output/folder/on/your/computer"
@@ -14,6 +11,7 @@ INVESTIGATOR_NAME="<investigator_name>"
 EXPERIMENT_TYPE="<PE|SE>"
 
 # Container paths (do not change unless you also change mounted paths below).
+IMAGE="rnaseqpipeline:latest"
 CONTAINER_REFERENCE_DIR="/data/referenceFiles"
 CONTAINER_FASTQ_ROOT_DIR="/data/Model_Experiment"
 CONTAINER_OUTPUT_DIR="/data/output"

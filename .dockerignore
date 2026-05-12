@@ -1,5 +1,57 @@
-*.txt
-ethan_copy_rnaseqpipeline.yml
-*.md
-folder_inventory_compare.py
-results_compare.py
+# -----------------------------------------------------------------------------
+# Keep Docker build contexts small (COPY . sends everything below unless listed).
+# If you write pipeline output under this repo clone, add those paths here too.
+# -----------------------------------------------------------------------------
+
+# Version control
+.git
+.github
+
+# Python caches and packaging
+__pycache__
+*.py[cod]
+*$py.class
+.pytest_cache
+.mypy_cache
+.ruff_cache
+*.egg-info
+.eggs
+dist
+build
+
+# Virtual environments
+.venv
+venv
+env
+ENV
+
+# OS and editors
+.DS_Store
+Thumbs.db
+.idea
+.vscode
+*.swp
+*~
+
+# Large sequencing / alignment artifacts (should be mounted at runtime, not baked in)
+*.fastq.gz
+*.fq.gz
+*.fastq
+*.fq
+*.bam
+*.bai
+*.cram
+*.sam
+*.bw
+*.bigwig
+*.BigWig
+
+# Typical local output / scratch dirs when runs live next to the Dockerfile
+output
+outputs
+results
+work
+tmp
+temp
+full_dataset
+

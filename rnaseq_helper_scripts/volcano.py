@@ -5,6 +5,9 @@ import logging
 from pathlib import Path
 import sys
 
+import os
+os.environ.setdefault("MPLCONFIGDIR", "/tmp/.config/matplotlib")
+os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
 import matplotlib
 
 matplotlib.use("Agg")

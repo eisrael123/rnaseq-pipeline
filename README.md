@@ -109,6 +109,12 @@ If `docker ps` shows an error about connecting to the Docker daemon, Docker Desk
 docker build -t rnaseqpipeline:latest .
 ```
 
+### CPU, memory, and concurrent runs
+
+To give the container as much compute headroom as your host allows, open Docker Desktop and go to **Settings** → **Resources**. Increase **CPUs** and **Memory** toward what your machine can spare (STAR alignment, abundance estimation, and downstream steps are demanding), then click **Apply & Restart** if Docker asks you to.
+
+This pipeline is **computationally and memory intensive**. Do **not** run multiple instances of the pipeline—or other heavy workloads—at the same time on the same machine unless you know you have spare capacity. Competing processes slow runs sharply and can trigger out-of-memory or other downstream failures.
+
 ### Pipeline Arguments 
 #### For metadata.py: 
 - `<fastq_root_dir>`: Filepath of Fastq Directory (the one that contains `cntl_*` and `test_*` subdirectories) 
