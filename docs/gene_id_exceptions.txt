@@ -1,0 +1,49 @@
+# gene_id values that are legitimately not Ensembl accessions.
+#
+# validate_outputs.py rule 6 requires every gene_id to match ^ENS[A-Z]*G\d+$ unless it is
+# listed here. One entry per line; '#' starts a comment; a trailing '*' makes the entry a
+# prefix match.
+#
+# Keep this list short and justified. If you are adding a whole species or annotation source,
+# fix the annotation instead.
+
+# ERCC spike-in controls. Present in de_gene because DESeq2 fits the full count matrix; the
+# normalized counts matrix already excludes them.
+ERCC-*
+ERCC_*
+
+# Epstein-Barr virus loci on the Akata/B95-8 contigs. Named by historical locus, not Ensembl.
+# The BxxFy / BxxRy prefixes are covered by schemas.VIRAL_GENE_ID_PREFIXES; these are the
+# EBV genes that do not follow that pattern.
+EBER1
+EBER2
+LF1
+LF2
+LF3
+A73
+RPMS1
+EBNA-*
+LMP-*
+
+# Kaposi's sarcoma-associated herpesvirus (KSHV) loci.
+vFLIP
+vCyclin
+vIRF*
+kaposin*
+PAN
+K1
+K8.1
+
+# Murine gammaherpesvirus 68 (MHV68) loci.
+M1
+M2
+M3
+M4
+M7
+M8
+M9
+M10a
+M10b
+M10c
+M11
+M12
