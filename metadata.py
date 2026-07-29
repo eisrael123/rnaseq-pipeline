@@ -1,23 +1,32 @@
 #!/usr/bin/env python3
 # metadata.py
-# metadata.py is same script as scriptb_bkup/metadata_620a.py
+#
+# Usage: metadata.py <fastq_root_dir> <reference_dir> <species_name> <investigator_name>
+#                    <PE|SE> <results_dir> [experiment options]
+#
+# Emits <results_dir>/<investigator>_metadata_<timestamp>.tsv (the file to hand to rnaseq.py)
+# and <results_dir>/metadata.tsv (the warehouse copy, identical content).
 
-# Usage: metadata.py <fastq_root_dir> <reference_dir> <species_name> <investigator_name> <PE|SE> <results_dir>
-
-import pandas as pd
-from pathlib import Path
+import argparse
+import hashlib
+import logging
+import os
 import re
 import sys
-import os
-from datetime import datetime
-import logging
-from tqdm import tqdm
-import gzip
+from datetime import date, datetime
 from itertools import chain
+from pathlib import Path
+
+import pandas as pd
+
+sys.path.insert(0, str(Path(__file__).resolve().parent / "rnaseq_helper_scripts"))
+
+from outputs import create_layout  # noqa: E402
+from schemas import METADATA, METADATA_LEGACY_COLUMNS, NA  # noqa: E402
+import vocab  # noqa: E402
 
 REQUIRED_ENV = "rnaseqpipeline"
 
-# Check if running in the right conda env
 conda_env = os.environ.get("CONDA_DEFAULT_ENV")
 if conda_env != REQUIRED_ENV:
     sys.stderr.write(
@@ -27,212 +36,329 @@ if conda_env != REQUIRED_ENV:
     )
     sys.exit(1)
 
-REFERENCE_DIR = None
+READ1_PATTERNS = [
+    re.compile(r'(.*)_1\.fastq\.gz'),
+    re.compile(r'(.*)_R1_001\.fastq\.gz'),
+    re.compile(r'(.*)_1\.fq\.gz'),
+    re.compile(r'(.*)_R1_001\.fq\.gz'),
+    re.compile(r'(.*)_R1\.fastq\.gz'),
+    re.compile(r'(.*)_R1\.fq\.gz'),
+]
+READ2_PATTERNS = [
+    re.compile(r'(.*)_2\.fastq\.gz'),
+    re.compile(r'(.*)_R2_001\.fastq\.gz'),
+    re.compile(r'(.*)_2\.fq\.gz'),
+    re.compile(r'(.*)_R2_001\.fq\.gz'),
+    re.compile(r'(.*)_R2\.fastq\.gz'),
+    re.compile(r'(.*)_R2\.fq\.gz'),
+]
+SINGLE_PATTERNS = [
+    re.compile(r'(.*)\.fastq\.gz'),
+    re.compile(r'(.*)\.fq\.gz'),
+]
 
-def get_available_references():
-    if not REFERENCE_DIR.exists() or not REFERENCE_DIR.is_dir():
-        print("Error: 'referenceFiles' directory not found or not a directory.")
-        sys.exit(1)
-    return [d.name for d in REFERENCE_DIR.iterdir() if d.is_dir()]
 
-def check_reference_availability(species_name):
-    """Check if the specified reference is available."""
-    available_references = get_available_references()
-    if species_name not in available_references:
-        print(f"Reference '{species_name}' not available. Available references are: {', '.join(available_references)}")
-        return False
-    return True
+def fail(message: str) -> None:
+    """Exit non-zero with a readable message. No placeholders, no partial metadata."""
+    sys.stderr.write(f"\nERROR: {message}\n\n")
+    logging.error(message)
+    sys.exit(1)
 
-def parse_fastq_files(fastq_root_dir, experiment_type, species_name):
+
+def md5_file(path: Path, chunk_size: int = 1 << 22) -> str:
+    digest = hashlib.md5()
+    with open(path, "rb") as handle:
+        for chunk in iter(lambda: handle.read(chunk_size), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def condition_from_subdir(subdir_name: str) -> str:
+    """`test` or `cntl` from the condition subdirectory name. A hard requirement."""
+    lowered = subdir_name.lower()
+    if lowered.startswith("test"):
+        return "test"
+    if lowered.startswith("cntl"):
+        return "cntl"
+    fail(
+        f"condition subdirectory {subdir_name!r} is neither 'test' nor 'cntl'. The FASTQ parent "
+        f"directory must contain exactly two subdirectories named 'test' and 'cntl'."
+    )
+
+
+def available_references(reference_dir: Path) -> list[str]:
+    if not reference_dir.is_dir():
+        fail(f"reference directory not found: {reference_dir}")
+    return sorted(d.name for d in reference_dir.iterdir() if d.is_dir())
+
+
+def parse_fastq_files(fastq_root_dir: Path, layout: str) -> list[dict]:
+    """One record per sample: condition, replicate ordering and read paths."""
+    records: list[dict] = []
+    for subdir in sorted(fastq_root_dir.iterdir()):
+        if not subdir.is_dir():
+            continue
+        condition = condition_from_subdir(subdir.name)
+        fastqs = sorted(chain(subdir.rglob('*.fastq.gz'), subdir.rglob('*.fq.gz')))
+
+        if layout == "PE":
+            paired: dict[str, dict] = {}
+            for fastq in fastqs:
+                for pattern in READ1_PATTERNS:
+                    match = pattern.match(fastq.name)
+                    if match:
+                        paired.setdefault(match.group(1), {})["r1"] = fastq
+                        break
+                for pattern in READ2_PATTERNS:
+                    match = pattern.match(fastq.name)
+                    if match:
+                        paired.setdefault(match.group(1), {})["r2"] = fastq
+                        break
+            for sample_name in sorted(paired):
+                reads = paired[sample_name]
+                if "r1" not in reads or "r2" not in reads:
+                    fail(
+                        f"sample {sample_name!r} in {subdir} is missing its "
+                        f"{'R2' if 'r1' in reads else 'R1'} file. Paired-end runs need both."
+                    )
+                records.append({
+                    "sample_name": sample_name,
+                    "condition": condition,
+                    "fastq_r1": reads["r1"],
+                    "fastq_r2": reads["r2"],
+                })
+        else:
+            for fastq in fastqs:
+                for pattern in SINGLE_PATTERNS:
+                    match = pattern.match(fastq.name)
+                    if match:
+                        records.append({
+                            "sample_name": match.group(1),
+                            "condition": condition,
+                            "fastq_r1": fastq,
+                            "fastq_r2": None,
+                        })
+                        break
+                else:
+                    fail(f"FASTQ {fastq.name} does not match any expected single-end pattern.")
+    return records
+
+
+def resolve(field: str, value: str | None, *, prompt: str, allowed=None,
+            interactive: bool, flag: str, default: str | None = None) -> str:
+    """Return a validated value for ``field``, prompting only when a terminal is attached.
+
+    Nothing here depends on being interactive: every field can be supplied by flag, which is
+    how run_pipeline_one_shot.sh drives it.
     """
-    Traverse the parent directory to find FASTQ files and extract metadata.
+    if value is None and default is not None:
+        value = default
+    while value is None:
+        if not interactive:
+            fail(
+                f"{field} was not supplied and there is no terminal to prompt on. "
+                f"Pass {flag}."
+                + (f"\nallowed values: {', '.join(sorted(allowed))}" if allowed else "")
+            )
+        entered = input(f"{prompt}: ").strip()
+        value = entered or None
+    if allowed is not None:
+        try:
+            vocab.validate(field, value)
+        except vocab.VocabError as error:
+            fail(str(error))
+    return value
 
-    Parameters:
-        fastq_root_dir (Path): Path to the directory containing FASTQ files.
-        experiment_type (str): 'PE' for paired-end or 'SE' for single-end.
-        species_name (str): Reference genome name.
 
-    Returns:
-        List[Dict]: A list of dictionaries containing metadata for each sample.
-    """
-    import re
-    from itertools import chain
+def parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="metadata.py",
+        description="Generate the metadata TSV that drives rnaseq.py.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    parser.add_argument("fastq_root_dir", help="directory containing the test/ and cntl/ subdirectories")
+    parser.add_argument("reference_dir", help="path to referenceFiles")
+    parser.add_argument("species_name", help="genome build; must match a directory under reference_dir")
+    parser.add_argument("investigator_name")
+    parser.add_argument("experiment_type", choices=["PE", "SE", "pe", "se"], help="PE or SE")
+    parser.add_argument("results_dir", help="output directory")
 
-    metadata_list = []
+    experiment = parser.add_argument_group("experiment structure (prompted if omitted)")
+    experiment.add_argument("--cell-line", help=f"one of: {', '.join(sorted(vocab.CELL_LINES))}")
+    experiment.add_argument("--organism", help=f"one of: {', '.join(sorted(vocab.ORGANISMS))}")
+    experiment.add_argument("--perturbation-type",
+                            help=f"one of: {', '.join(sorted(vocab.PERTURBATION_TYPES))}")
+    experiment.add_argument("--perturbation-target", help="e.g. BMRF1, SRSF1, CC115")
+    experiment.add_argument("--perturbation-dose", help="e.g. 100nM")
+    experiment.add_argument("--timepoint-hours", help="hours post perturbation, or NA")
+    experiment.add_argument("--sequencing-run-date", help="ISO 8601 date, or NA")
+    experiment.add_argument("--notes", default="", help="free text")
+    experiment.add_argument("--non-interactive", action="store_true",
+                            help="never prompt; missing values are an error")
+    return parser.parse_args(argv)
 
-    # Define patterns for paired-end reads
-    read1_patterns = [
-        re.compile(r'(.*)_1\.fastq\.gz'),
-        re.compile(r'(.*)_R1_001\.fastq\.gz'),
-        re.compile(r'(.*)_1\.fq\.gz'),
-        re.compile(r'(.*)_R1_001\.fq\.gz'),
-        re.compile(r'(.*)_R1\.fastq\.gz'),
-        re.compile(r'(.*)_R1\.fq\.gz')
-    ]
-    read2_patterns = [
-        re.compile(r'(.*)_2\.fastq\.gz'),
-        re.compile(r'(.*)_R2_001\.fastq\.gz'),
-        re.compile(r'(.*)_2\.fq\.gz'),
-        re.compile(r'(.*)_R2_001\.fq\.gz'),
-        re.compile(r'(.*)_R2\.fastq\.gz'),
-        re.compile(r'(.*)_R2\.fq\.gz')
-    ]
 
-    # Define patterns for single-end reads (*.fastq.gz and *.fq.gz)
-    single_patterns = [
-        re.compile(r'(.*)\.fastq\.gz'),
-        re.compile(r'(.*)\.fq\.gz')
-    ]
+def main(argv: list[str]) -> None:
+    args = parse_args(argv)
 
-    # Iterate through subdirectories
-    for subdir in fastq_root_dir.iterdir():
-        if subdir.is_dir():
-            condition = 'test' if 'test' in subdir.name.lower() else 'control'
-            control_flag = 'no' if condition == 'test' else 'yes'
-            experiment_name = fastq_root_dir.name
+    fastq_root_dir = Path(args.fastq_root_dir).resolve()
+    reference_dir = Path(args.reference_dir).resolve()
+    genome_build = args.species_name
+    investigator = args.investigator_name
+    library_layout = args.experiment_type.upper()
+    results_dir = Path(args.results_dir).resolve()
 
-            if experiment_type == 'PE':
-                paired_reads = {}
-                for fastq_file in chain(subdir.rglob('*.fastq.gz'), subdir.rglob('*.fq.gz')):
-                    for pattern in read1_patterns:
-                        match1 = pattern.match(fastq_file.name)
-                        if match1:
-                            sample_id = match1.group(1)
-                            paired_reads.setdefault(sample_id, {})['Read 1'] = str(fastq_file)
-                            break
-                    for pattern in read2_patterns:
-                        match2 = pattern.match(fastq_file.name)
-                        if match2:
-                            sample_id = match2.group(1)
-                            paired_reads.setdefault(sample_id, {})['Read 2'] = str(fastq_file)
-                            break
-                for sample_id, reads in paired_reads.items():
-                    if 'Read 1' in reads and 'Read 2' in reads:
-                        metadata_entry = {
-                            'Path Read 1': reads['Read 1'],
-                            'Path Read 2': reads['Read 2'],
-                            'Species': species_name,
-                            'Sample name': sample_id,
-                            'Condition': condition,
-                            'Control?': control_flag,
-                            'Experiment name': experiment_name
-                        }
-                        metadata_list.append(metadata_entry)
-                    else:
-                        logging.warning(f"Sample {sample_id} in {subdir} is missing paired reads. Skipping.")
+    if not fastq_root_dir.is_dir():
+        fail(f"FASTQ directory not found: {fastq_root_dir}")
+    if len(fastq_root_dir.name.split('_')) != 2:
+        fail(
+            f"FASTQ directory name {fastq_root_dir.name!r} must be in 'Model_Experiment' format "
+            f"with exactly ONE underscore. Dashes are allowed inside each part."
+        )
+    experiment_id = fastq_root_dir.name
+    model = experiment_id.split('_')[0]
 
-            elif experiment_type == 'SE':
-                for fastq_file in chain(subdir.rglob('*.fastq.gz'), subdir.rglob('*.fq.gz')):
-                    matched = False
-                    for pattern in single_patterns:
-                        match = pattern.match(fastq_file.name)
-                        if match:
-                            sample_id = match.group(1)
-                            metadata_entry = {
-                                'Path Read 1': str(fastq_file),
-                                'Path Read 2': '',
-                                'Species': species_name,
-                                'Sample name': sample_id,
-                                'Condition': condition,
-                                'Control?': control_flag,
-                                'Experiment name': experiment_name
-                            }
-                            metadata_list.append(metadata_entry)
-                            matched = True
-                            break
-                    if not matched:
-                        logging.warning(f"FASTQ file {fastq_file.name} does not match expected single-end pattern. Skipping.")
+    references = available_references(reference_dir)
+    if genome_build not in references:
+        fail(f"reference {genome_build!r} not available. Available: {', '.join(references)}")
 
-    return metadata_list
+    create_layout(results_dir)
+    timestamp = datetime.now().strftime("%m%d%Y_%H%M%S")
+    logging.basicConfig(
+        filename=str(results_dir / "logs" / f"metadata_{timestamp}.log"),
+        level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s',
+    )
+    logging.info("Starting metadata generation for %s", experiment_id)
 
-# Verify command-line arguments
-USAGE = "Usage: metadata.py <fastq_root_dir> <reference_dir> <species_name> <investigator_name> <PE|SE> <results_dir>"
-EXPECTED_ARGC = 7  # script name + 6 required args
+    interactive = sys.stdin.isatty() and not args.non_interactive
 
-if len(sys.argv) == 1:
-    print(USAGE)
-    sys.exit(0)
-
-if len(sys.argv) != EXPECTED_ARGC:
-    provided = len(sys.argv) - 1
-    expected = EXPECTED_ARGC - 1
-    print(f"Error: invalid argument count (expected {expected}, got {provided}).")
-    print(USAGE)
-    sys.exit(1)
-
-# Extract command-line arguments
-fastq_root_dir = Path(sys.argv[1])
-REFERENCE_DIR = Path(sys.argv[2])
-species_name = sys.argv[3]
-investigator = sys.argv[4]
-experiment_type = sys.argv[5].upper()  # Expect PE or SE
-results_dir = Path(sys.argv[6])
-
-# Check fastq_root_dir name format: must be "model_experiment"
-if len(fastq_root_dir.name.split('_')) != 2:
-    print('Oh no! The metadata file was not generated because the FASTQ files directory name should be in the format "model_experiment", \033[1;3mwith only ONE underscore\033[0m included in the directory name. Try again!')
-    sys.exit(1)
-
-if experiment_type not in ["PE", "SE"]:
-    print("Error: Experiment type must be either 'PE' (paired-end) or 'SE' (single-end).")
-    sys.exit(1)
-
-# Check if the specified reference directory exists
-if not check_reference_availability(species_name):
-    sys.exit(1)
-
-# Set up logging
-timestamp = datetime.now().strftime("%m%d%Y_%H%M%S")
-log_filename = f'{results_dir}/metadata_log_{timestamp}.txt'
-logging.basicConfig(filename=log_filename, level=logging.INFO,
-                    format='%(asctime)s - %(levelname)s - %(message)s')
-logging.info("Starting metadata generation.")
-logging.info(f"Fastq Root Directory: {fastq_root_dir}")
-logging.info(f"Species Name: {species_name}")
-logging.info(f"Investigator: {investigator}")
-logging.info(f"Experiment Type: {experiment_type}")
-
-# Parse FASTQ files and extract metadata
-metadata_entries = parse_fastq_files(fastq_root_dir, experiment_type, species_name)
-
-if not metadata_entries:
-    logging.error("No valid samples found. Exiting.")
-    print("Error: No valid samples found. Check the log for details.")
-    sys.exit(1)
-
-# Create DataFrame
-metadata_df = pd.DataFrame(metadata_entries)
-
-# Sort: controls first (lexicographically), then tests (lexicographically)
-metadata_df['Condition_sort'] = metadata_df['Condition'].apply(lambda x: 0 if x == 'control' else 1)
-metadata_df = metadata_df.sort_values(['Condition_sort', 'Sample name'], ascending=[True, True])
-metadata_df = metadata_df.drop(columns=['Condition_sort'])
-
-# Assign ConditionPrefix after sorting
-def get_condition_prefix(row):
-    subdir = Path(row['Path Read 1']).parts[-2]
-    if subdir.lower().startswith('cntl'):
-        return 'cntl'
-    elif subdir.lower().startswith('test'):
-        return 'test'
+    cell_line = resolve(
+        "cell_line", args.cell_line, prompt=f"Cell line for {experiment_id}",
+        allowed=vocab.CELL_LINES, interactive=interactive, flag="--cell-line",
+        # The Model half of Model_Experiment is the cell line by convention.
+        default=model if model in vocab.CELL_LINES else None,
+    )
+    organism = resolve(
+        "organism", args.organism, prompt=f"Organism for {genome_build}",
+        allowed=vocab.ORGANISMS, interactive=interactive, flag="--organism",
+        default=vocab.organism_for_build(genome_build),
+    )
+    perturbation_type = resolve(
+        "perturbation_type", args.perturbation_type,
+        prompt=f"Perturbation type ({'/'.join(sorted(vocab.PERTURBATION_TYPES))})",
+        allowed=vocab.PERTURBATION_TYPES, interactive=interactive, flag="--perturbation-type",
+    )
+    if perturbation_type == "none":
+        perturbation_target = NA
+        perturbation_dose = NA
     else:
-        return row['Condition']
+        perturbation_target = resolve(
+            "perturbation_target", args.perturbation_target,
+            prompt="Perturbation target (e.g. BMRF1)", interactive=interactive,
+            flag="--perturbation-target",
+        )
+        perturbation_dose = resolve(
+            "perturbation_dose", args.perturbation_dose,
+            prompt="Perturbation dose (e.g. 100nM, or NA)", interactive=interactive,
+            flag="--perturbation-dose",
+        )
+    timepoint_hours = resolve(
+        "timepoint_hours", args.timepoint_hours, prompt="Timepoint in hours (or NA)",
+        interactive=interactive, flag="--timepoint-hours",
+    )
+    if timepoint_hours != NA:
+        try:
+            timepoint_hours = str(float(timepoint_hours))
+        except ValueError:
+            fail(f"timepoint_hours must be a number or NA, got {timepoint_hours!r}")
+    sequencing_run_date = resolve(
+        "sequencing_run_date", args.sequencing_run_date,
+        prompt="Sequencing run date (YYYY-MM-DD, or NA)", interactive=interactive,
+        flag="--sequencing-run-date",
+    )
+    if sequencing_run_date != NA:
+        try:
+            sequencing_run_date = date.fromisoformat(sequencing_run_date).isoformat()
+        except ValueError:
+            fail(f"sequencing_run_date must be ISO 8601 (YYYY-MM-DD) or NA, "
+                 f"got {sequencing_run_date!r}")
 
-metadata_df = metadata_df.copy()
-metadata_df['ConditionPrefix'] = metadata_df.apply(get_condition_prefix, axis=1)
-# Now assign replicate numbers in sorted order
-metadata_df['ReplicateNum'] = metadata_df.groupby('ConditionPrefix').cumcount() + 1
-metadata_df['ConditionReplicate'] = metadata_df['ConditionPrefix'] + metadata_df['ReplicateNum'].astype(str)
+    records = parse_fastq_files(fastq_root_dir, library_layout)
+    if not records:
+        fail(f"no {library_layout} FASTQ files found under {fastq_root_dir}")
 
-# Reorder columns as per requirement (include ConditionReplicate)
-metadata_df = metadata_df[['Path Read 1', 'Path Read 2', 'Species', 'Sample name', 'Condition', 'Control?', 'ConditionReplicate', 'Experiment name']]
+    conditions_found = {record["condition"] for record in records}
+    missing_conditions = sorted(vocab.CONDITIONS - conditions_found)
+    if missing_conditions:
+        fail(f"no samples found for condition(s): {', '.join(missing_conditions)}")
 
-# Assign Species (all entries have the same species)
-metadata_df['Species'] = species_name
+    # Controls first, then tests, each ordered by filename. Replicate indices follow that order
+    # so they are stable across reruns of the same input directory.
+    records.sort(key=lambda r: (r["condition"] != "cntl", r["fastq_r1"].name))
+    replicate_counter: dict[str, int] = {}
 
-# Export to TSV
-metadata_filename = f'{results_dir}/{investigator}_metadata_{timestamp}.tsv'
-metadata_df.to_csv(metadata_filename, sep='\t', index=False)
+    rows = []
+    for record in records:
+        condition = record["condition"]
+        replicate_counter[condition] = replicate_counter.get(condition, 0) + 1
+        replicate_index = replicate_counter[condition]
+        r1, r2 = record["fastq_r1"], record["fastq_r2"]
 
-logging.info(f"Metadata file generated: {metadata_filename}")
-print(f"Metadata file successfully generated: {metadata_filename}")
+        print(f"Checksumming {r1.name}" + (f" and {r2.name}" if r2 else ""), flush=True)
+        rows.append({
+            # Spec columns.
+            "sample_id": f"{experiment_id}_{condition}{replicate_index}",
+            "experiment_id": experiment_id,
+            "condition": condition,
+            "replicate_index": replicate_index,
+            "cell_line": cell_line,
+            "organism": organism,
+            "genome_build": genome_build,
+            "perturbation_type": perturbation_type if condition == "test" else "none",
+            "perturbation_target": perturbation_target if condition == "test" else NA,
+            "perturbation_dose": perturbation_dose if condition == "test" else NA,
+            "timepoint_hours": timepoint_hours,
+            "library_layout": library_layout,
+            # Filled in by rnaseq.py once RSeQC has run (Task 14).
+            "strandedness": NA,
+            "fastq_r1": str(r1),
+            "fastq_r2": str(r2) if r2 else NA,
+            "fastq_r1_md5": md5_file(r1),
+            "fastq_r2_md5": md5_file(r2) if r2 else NA,
+            "investigator": investigator,
+            "sequencing_run_date": sequencing_run_date,
+            "notes": args.notes or NA,
+            # Legacy columns rnaseq.py still reads by name.
+            "Path Read 1": str(r1),
+            "Path Read 2": str(r2) if r2 else NA,
+            "Species": genome_build,
+            "Sample name": record["sample_name"],
+            "Condition": "test" if condition == "test" else "control",
+            "Control?": "no" if condition == "test" else "yes",
+            "ConditionReplicate": f"{condition}{replicate_index}",
+            "Experiment name": experiment_id,
+        })
+
+    duplicates = pd.Series([r["Sample name"] for r in rows])
+    if duplicates.duplicated().any():
+        fail(
+            "duplicate sample names across conditions: "
+            f"{sorted(duplicates[duplicates.duplicated()].unique())}. Sample names must be "
+            "unique because they become output directory names."
+        )
+
+    column_order = list(METADATA.column_names) + list(METADATA_LEGACY_COLUMNS)
+    metadata_df = pd.DataFrame(rows)[column_order]
+
+    metadata_filename = results_dir / f"{investigator}_metadata_{timestamp}.tsv"
+    metadata_df.to_csv(metadata_filename, sep='\t', index=False)
+    metadata_df.to_csv(results_dir / "metadata.tsv", sep='\t', index=False)
+
+    logging.info("Metadata file generated: %s", metadata_filename)
+    print(f"Metadata file successfully generated: {metadata_filename}")
+    print(f"Warehouse copy: {results_dir / 'metadata.tsv'}")
+    print(f"{len(rows)} samples: " + ", ".join(r["sample_id"] for r in rows))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
