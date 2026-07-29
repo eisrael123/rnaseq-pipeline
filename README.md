@@ -179,25 +179,31 @@ Optional:
 ```bash
 docker run --rm -it \
   -v "/path/on/your/computer/to/referenceFiles/:/data/referenceFiles:ro" \
-  -v "/path/on/your/computer/to/Model_Experiment:/data/Model_Experiment:ro" \
+  -v "/path/on/your/computer/to/SNU719_Rta-Zta-2025-04-10:/data/SNU719_Rta-Zta-2025-04-10:ro" \
   -v "/path/on/your/computer/for/output_folder:/data/output" \
   -w /work \
   rnaseqpipeline:latest \
   bash
 ```
 
+**The FASTQ mount point must carry the real experiment directory name**, not a generic one.
+`metadata.py` reads `experiment_id` from the basename of the path you hand it, and that id is
+baked into every `sample_id`. Mounting to a fixed `/data/Model_Experiment` would label every
+experiment in the archive identically; `metadata.py` rejects that name outright to make the
+mistake loud rather than silent.
+
 #### **IMPORTANT NOTE**: How paths change inside the container
 When you use `-v` to mount folders, Docker maps folders from your computer to new paths inside the container.    
 
 Use the **container paths** (right side of every colon in each `-v` line) when calling `metadata.py` and `rnaseq.py` inside the container.
 
-- `fastq_root_dir`: `/data/Model_Experiment`
+- `fastq_root_dir`: `/data/<your experiment directory name>`
 - `reference_dir`: `/data/referenceFiles`
 - `results_dir`: `/data/output`
 - `scripts_dir`: `/work/rnaseq_helper_scripts`
 
 Quick mapping examples from the command above:
-- `/path/on/your/computer/to/Model_Experiment` -> `/data/Model_Experiment`
+- `/path/on/your/computer/to/SNU719_Rta-Zta-2025-04-10` -> `/data/SNU719_Rta-Zta-2025-04-10`
 - `/path/on/your/computer/to/referenceFiles` -> `/data/referenceFiles`
 - `/path/on/your/computer/for/output_folder` -> `/data/output`
 

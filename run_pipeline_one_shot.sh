@@ -26,9 +26,13 @@ NOTES=""
 # Container paths (do not change unless you also change mounted paths below).
 IMAGE="rnaseqpipeline:latest"
 CONTAINER_REFERENCE_DIR="/data/referenceFiles"
-CONTAINER_FASTQ_ROOT_DIR="/data/Model_Experiment"
 CONTAINER_OUTPUT_DIR="/data/output"
 CONTAINER_SCRIPTS_DIR="/work/rnaseq_helper_scripts"
+
+# metadata.py reads experiment_id from the *basename of the path it is given*, and that id is
+# what sample_id and comparison_id are built from. Mounting to a fixed name would stamp every
+# run with that name, so the mount point has to carry the real experiment directory name.
+CONTAINER_FASTQ_ROOT_DIR="/data/$(basename "${HOST_FASTQ_ROOT_DIR}")"
 
 # Recorded in run_manifest.json as docker_image_digest so a result can be traced to the exact
 # image that produced it.

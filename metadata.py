@@ -57,6 +57,10 @@ SINGLE_PATTERNS = [
     re.compile(r'(.*)\.fq\.gz'),
 ]
 
+# Names that mean somebody pasted an example instead of substituting their own path. Cheap to
+# check, and the failure it prevents is silent and permanent.
+PLACEHOLDER_NAMES = frozenset({"Model_Experiment", "model_experiment", "CellLine_Experiment"})
+
 
 def fail(message: str) -> None:
     """Exit non-zero with a readable message. No placeholders, no partial metadata."""
@@ -225,6 +229,14 @@ def main(argv: list[str]) -> None:
             f"the experiment descriptor; both parts must be non-empty."
         )
     experiment_id = fastq_root_dir.name
+    if experiment_id in PLACEHOLDER_NAMES:
+        fail(
+            f"the FASTQ directory is named {experiment_id!r}, which is the documentation "
+            f"placeholder rather than a real experiment. This name becomes experiment_id and is "
+            f"baked into every sample_id, so it must be the actual experiment directory name.\n"
+            f"If you are running under Docker, mount to the real name:\n"
+            f"    -v \"/host/path/SNU719_Rta-Zta-2025-04-10:/data/SNU719_Rta-Zta-2025-04-10:ro\""
+        )
 
     references = available_references(reference_dir)
     if genome_build not in references:

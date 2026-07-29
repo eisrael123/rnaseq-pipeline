@@ -172,6 +172,14 @@ def test_experiment_name_needs_both_halves(tmp_path):
     assert "Model_Experiment" in result.stderr
 
 
+def test_placeholder_experiment_name_is_rejected(tmp_path):
+    """A container mounted at a fixed /data/Model_Experiment would stamp every run alike."""
+    experiment = build_experiment(tmp_path, "Model_Experiment")
+    result = run_metadata(experiment, "SNU719")
+    assert result.returncode != 0
+    assert "documentation placeholder" in result.stderr
+
+
 def test_pointing_one_level_too_high_says_so(tmp_path):
     """The old rule rejected '1_fastq' by accident; this is the replacement guardrail."""
     build_experiment(tmp_path / "1_fastq", "SNU719_Rta-Zta-2025-04")
