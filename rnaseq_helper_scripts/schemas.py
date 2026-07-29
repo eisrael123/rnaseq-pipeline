@@ -414,7 +414,13 @@ METADATA = Table(
         _c("organism", "enum", ("human", "mouse")),
         _c("genome_build", "str", notes="Must match a directory under reference_dir."),
         _c("perturbation_type", "enum",
-           ("transfection", "siRNA", "drug", "BCR-crosslink", "none")),
+           ("transfection", "siRNA", "drug", "BCR-crosslink", "none"),
+           notes="How the perturbation was delivered."),
+        _c("induced_program", "enum",
+           ("lytic_reactivation", "latency", "none", "unknown"),
+           notes="The biological program the perturbation was meant to induce, independent of "
+                 "how. `unknown` is a missing record; `none` is a recorded absence. Describes "
+                 "the experiment, so unlike `perturbation_*` it is set on control rows too."),
         _c("perturbation_target", "str", notes="`NA` for controls."),
         _c("perturbation_dose", "str", notes="`NA` if not applicable."),
         _c("timepoint_hours", "float", notes="`NA` if not applicable."),

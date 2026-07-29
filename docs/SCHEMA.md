@@ -377,7 +377,8 @@ One row per FASTQ sample. Produced by metadata.py and copied into results_dir.
 | `cell_line` | str | Controlled vocabulary, see vocab.py. |
 | `organism` | enum: `human` \| `mouse` |  |
 | `genome_build` | str | Must match a directory under reference_dir. |
-| `perturbation_type` | enum: `transfection` \| `siRNA` \| `drug` \| `BCR-crosslink` \| `none` |  |
+| `perturbation_type` | enum: `transfection` \| `siRNA` \| `drug` \| `BCR-crosslink` \| `none` | How the perturbation was delivered. |
+| `induced_program` | enum: `lytic_reactivation` \| `latency` \| `none` \| `unknown` | The biological program the perturbation was meant to induce, independent of how. `unknown` is a missing record; `none` is a recorded absence. Describes the experiment, so unlike `perturbation_*` it is set on control rows too. |
 | `perturbation_target` | str | `NA` for controls. |
 | `perturbation_dose` | str | `NA` if not applicable. |
 | `timepoint_hours` | float | `NA` if not applicable. |

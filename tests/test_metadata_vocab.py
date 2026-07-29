@@ -59,7 +59,8 @@ def run_metadata(experiment, cell_line):
          str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
          "ethan", "PE", str(experiment["results_dir"]),
          "--non-interactive", "--cell-line", cell_line,
-         "--perturbation-type", "transfection", "--perturbation-target", "Zta",
+         "--perturbation-type", "transfection", "--induced-program", "lytic_reactivation",
+         "--perturbation-target", "Zta",
          "--perturbation-dose", "NA", "--timepoint-hours", "24",
          "--sequencing-run-date", "2026-01-15"],
         capture_output=True, text=True, env=environment,
@@ -92,6 +93,42 @@ def test_metadata_accepts_known_vocab_and_derives_sample_ids(experiment):
     assert frame["fastq_r1_md5"].str.len().eq(32).all()
 
 
+def test_induced_program_is_experiment_level(experiment):
+    """It describes the design, so it is on control rows too.
+
+    That is the difference from the perturbation_* fields: "every sample from a reactivation
+    experiment" has to be one filter, not a subquery back through experiment_id.
+    """
+    result = run_metadata(experiment, "SNU719")
+    assert result.returncode == 0, result.stderr
+
+    frame = pd.read_csv(experiment["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
+                        keep_default_na=False)
+    assert set(frame["induced_program"]) == {"lytic_reactivation"}
+    # Contrast: the perturbation itself was only applied to the test arm.
+    assert frame.loc[frame["condition"] == "cntl", "perturbation_type"].iloc[0] == "none"
+    assert frame.loc[frame["condition"] == "test", "perturbation_type"].iloc[0] == "transfection"
+
+
+def test_induced_program_rejects_free_text(experiment):
+    """'reactivation' is not a value; the vocabulary is the point of the field."""
+    environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
+    experiment["results_dir"].mkdir(exist_ok=True)
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "metadata.py"),
+         str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
+         "ethan", "PE", str(experiment["results_dir"]),
+         "--non-interactive", "--cell-line", "SNU719",
+         "--perturbation-type", "transfection", "--induced-program", "reactivation",
+         "--perturbation-target", "Zta", "--perturbation-dose", "NA",
+         "--timepoint-hours", "24", "--sequencing-run-date", "2025-04-10"],
+        capture_output=True, text=True, env=environment,
+    )
+    assert result.returncode != 0
+    assert "invalid induced_program" in result.stderr
+    assert "lytic_reactivation" in result.stderr
+
+
 def test_experiment_name_may_carry_a_uniquifying_suffix(tmp_path):
     """Only the first underscore is structural, so a date suffix can use either separator.
 
@@ -119,6 +156,7 @@ def test_cell_line_still_defaults_from_the_first_segment(tmp_path):
          str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
          "ethan", "PE", str(experiment["results_dir"]),
          "--non-interactive", "--perturbation-type", "none",
+         "--induced-program", "unknown",
          "--timepoint-hours", "NA", "--sequencing-run-date", "NA"],
         capture_output=True, text=True, env=environment,
     )

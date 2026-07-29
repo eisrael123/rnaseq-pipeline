@@ -11,6 +11,13 @@ CELL_LINES = frozenset({
 PERTURBATION_TYPES = frozenset({
     "transfection", "siRNA", "drug", "BCR-crosslink", "none",
 })
+# The biological program the perturbation was meant to induce, which is a separate axis from how
+# it was induced: lytic reactivation can be driven by Zta or Rta transfection, TPA/butyrate, or
+# BCR crosslinking. Keeping it separate is what makes "every reactivation experiment" a query.
+# `unknown` is distinct from `none`: one is an unrecorded value, the other is a recorded absence.
+INDUCED_PROGRAMS = frozenset({
+    "lytic_reactivation", "latency", "none", "unknown",
+})
 ORGANISMS = frozenset({"human", "mouse"})
 CONDITIONS = frozenset({"test", "cntl"})
 LIBRARY_LAYOUTS = frozenset({"PE", "SE"})
@@ -35,6 +42,7 @@ STRAND_CONTROL_GENES = {
 VOCABULARIES = {
     "cell_line": CELL_LINES,
     "perturbation_type": PERTURBATION_TYPES,
+    "induced_program": INDUCED_PROGRAMS,
     "organism": ORGANISMS,
     "condition": CONDITIONS,
     "library_layout": LIBRARY_LAYOUTS,

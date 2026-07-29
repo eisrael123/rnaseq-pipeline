@@ -15,6 +15,8 @@ EXPERIMENT_TYPE="<PE|SE>"
 # value. Use NA where a field does not apply.
 CELL_LINE="<Mutu|Akata|DG75|HepG2|Raji|SNU719|BCBL1|HEK293>"
 PERTURBATION_TYPE="<transfection|siRNA|drug|BCR-crosslink|none>"
+# How the perturbation was delivered is PERTURBATION_TYPE; what it was meant to induce is this.
+INDUCED_PROGRAM="<lytic_reactivation|latency|none|unknown>"
 PERTURBATION_TARGET="<e.g. BMRF1, or NA>"
 PERTURBATION_DOSE="<e.g. 100nM, or NA>"
 TIMEPOINT_HOURS="<e.g. 24, or NA>"
@@ -44,6 +46,7 @@ docker run --rm \
     --non-interactive \
     --cell-line '${CELL_LINE}' \
     --perturbation-type '${PERTURBATION_TYPE}' \
+    --induced-program '${INDUCED_PROGRAM}' \
     --perturbation-target '${PERTURBATION_TARGET}' \
     --perturbation-dose '${PERTURBATION_DOSE}' \
     --timepoint-hours '${TIMEPOINT_HOURS}' \

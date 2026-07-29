@@ -190,6 +190,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     experiment.add_argument("--organism", help=f"one of: {', '.join(sorted(vocab.ORGANISMS))}")
     experiment.add_argument("--perturbation-type",
                             help=f"one of: {', '.join(sorted(vocab.PERTURBATION_TYPES))}")
+    experiment.add_argument("--induced-program",
+                            help=f"biological program induced; one of: "
+                                 f"{', '.join(sorted(vocab.INDUCED_PROGRAMS))}")
     experiment.add_argument("--perturbation-target", help="e.g. BMRF1, SRSF1, CC115")
     experiment.add_argument("--perturbation-dose", help="e.g. 100nM")
     experiment.add_argument("--timepoint-hours", help="hours post perturbation, or NA")
@@ -252,6 +255,11 @@ def main(argv: list[str]) -> None:
         "perturbation_type", args.perturbation_type,
         prompt=f"Perturbation type ({'/'.join(sorted(vocab.PERTURBATION_TYPES))})",
         allowed=vocab.PERTURBATION_TYPES, interactive=interactive, flag="--perturbation-type",
+    )
+    induced_program = resolve(
+        "induced_program", args.induced_program,
+        prompt=f"Induced program ({'/'.join(sorted(vocab.INDUCED_PROGRAMS))})",
+        allowed=vocab.INDUCED_PROGRAMS, interactive=interactive, flag="--induced-program",
     )
     if perturbation_type == "none":
         perturbation_target = NA
@@ -320,6 +328,10 @@ def main(argv: list[str]) -> None:
             "organism": organism,
             "genome_build": genome_build,
             "perturbation_type": perturbation_type if condition == "test" else "none",
+            # Experiment-level, unlike the perturbation_* fields: it describes the design, so it
+            # is on control rows too. "Every sample from a reactivation experiment" is then one
+            # filter rather than a subquery back through experiment_id.
+            "induced_program": induced_program,
             "perturbation_target": perturbation_target if condition == "test" else NA,
             "perturbation_dose": perturbation_dose if condition == "test" else NA,
             "timepoint_hours": timepoint_hours,

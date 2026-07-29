@@ -144,11 +144,19 @@ This pipeline is **computationally and memory intensive**. Do **not** run multip
 years later. It prompts for each of these; pass them as flags to skip the prompts, and add
 `--non-interactive` to make a missing value an error instead:
 
-- `--cell-line`, `--organism`, `--perturbation-type`: controlled vocabularies. An unrecognized
-  value is rejected with the list of allowed values. To add one, edit
-  `rnaseq_helper_scripts/vocab.py`.
+- `--cell-line`, `--organism`, `--perturbation-type`, `--induced-program`: controlled
+  vocabularies. An unrecognized value is rejected with the list of allowed values. To add one,
+  edit `rnaseq_helper_scripts/vocab.py`.
 - `--perturbation-target` (e.g. `BMRF1`), `--perturbation-dose` (e.g. `100nM`),
   `--timepoint-hours`, `--sequencing-run-date`, `--notes`.
+
+`--perturbation-type` is *how* the perturbation was delivered; `--induced-program` is *what it
+was meant to induce*. They are separate axes because lytic reactivation can be driven by Zta or
+Rta transfection, by TPA/butyrate, or by BCR crosslinking — keeping them apart is what makes
+"every reactivation experiment, regardless of method" a single query. Unlike the
+`--perturbation-*` fields, `--induced-program` describes the experiment and so is recorded on
+control samples too. Use `unknown` for an unrecoverable value and `none` for a recorded absence;
+they are not the same thing.
 
 #### For rnaseq.py: 
 - `<metadata_file>`: The file path of generated metadata tsv file `output_dir/*.tsv`.

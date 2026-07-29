@@ -71,6 +71,7 @@ def write_metadata(results_dir: Path) -> pd.DataFrame:
             "replicate_index": replicate, "cell_line": "SNU719", "organism": "human",
             "genome_build": GENOME_BUILD,
             "perturbation_type": "transfection" if condition == "test" else "none",
+            "induced_program": "lytic_reactivation",
             "perturbation_target": "Zta" if condition == "test" else "NA",
             "perturbation_dose": "NA", "timepoint_hours": "24.0", "library_layout": "PE",
             "strandedness": "NA", "fastq_r1": f"/data/{sample_name}_1.fq.gz",
