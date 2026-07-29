@@ -404,7 +404,10 @@ METADATA = Table(
     key_columns=("sample_id",),
     columns=(
         _c("sample_id", "str", notes="`{experiment_id}_{condition}{replicate_index}`."),
-        _c("experiment_id", "str", notes="Parent directory name, `Model_Experiment`."),
+        _c("experiment_id", "str",
+           notes="Parent directory name, `Model_Experiment`. The first underscore is the only "
+                 "structural one. Must be unique across the archive, since `sample_id` and "
+                 "`comparison_id` are derived from it."),
         _c("condition", "enum", CONDITIONS),
         _c("replicate_index", "int", notes="1-based, stable ordering by filename."),
         _c("cell_line", "str", notes="Controlled vocabulary, see vocab.py."),

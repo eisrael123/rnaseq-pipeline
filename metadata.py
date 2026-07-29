@@ -82,7 +82,9 @@ def condition_from_subdir(subdir_name: str) -> str:
         return "cntl"
     fail(
         f"condition subdirectory {subdir_name!r} is neither 'test' nor 'cntl'. The FASTQ parent "
-        f"directory must contain exactly two subdirectories named 'test' and 'cntl'."
+        f"directory must contain exactly two subdirectories named 'test' and 'cntl'.\n"
+        f"If {subdir_name!r} looks like an experiment name, you pointed one level too high: pass "
+        f"the Model_Experiment directory itself, not its parent."
     )
 
 
@@ -210,13 +212,16 @@ def main(argv: list[str]) -> None:
 
     if not fastq_root_dir.is_dir():
         fail(f"FASTQ directory not found: {fastq_root_dir}")
-    if len(fastq_root_dir.name.split('_')) != 2:
+    # Only the first underscore is structural: it separates the cell model from the experiment
+    # descriptor. Everything after it is free, so a uniquifying suffix can use either separator.
+    model, _, descriptor = fastq_root_dir.name.partition('_')
+    if not model or not descriptor:
         fail(
-            f"FASTQ directory name {fastq_root_dir.name!r} must be in 'Model_Experiment' format "
-            f"with exactly ONE underscore. Dashes are allowed inside each part."
+            f"FASTQ directory name {fastq_root_dir.name!r} must be in 'Model_Experiment' format, "
+            f"e.g. 'SNU719_Rta-Zta-2025-04'. The first underscore separates the cell model from "
+            f"the experiment descriptor; both parts must be non-empty."
         )
     experiment_id = fastq_root_dir.name
-    model = experiment_id.split('_')[0]
 
     references = available_references(reference_dir)
     if genome_build not in references:

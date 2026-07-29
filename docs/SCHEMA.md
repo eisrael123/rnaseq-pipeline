@@ -371,7 +371,7 @@ One row per FASTQ sample. Produced by metadata.py and copied into results_dir.
 | Column | Type | Notes |
 |---|---|---|
 | `sample_id` | str | `{experiment_id}_{condition}{replicate_index}`. |
-| `experiment_id` | str | Parent directory name, `Model_Experiment`. |
+| `experiment_id` | str | Parent directory name, `Model_Experiment`. The first underscore is the only structural one. Must be unique across the archive, since `sample_id` and `comparison_id` are derived from it. |
 | `condition` | enum: `test` \| `cntl` |  |
 | `replicate_index` | int | 1-based, stable ordering by filename. |
 | `cell_line` | str | Controlled vocabulary, see vocab.py. |

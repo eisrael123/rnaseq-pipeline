@@ -29,11 +29,18 @@ described in [docs/SCHEMA.md](docs/SCHEMA.md). Those tables, not the spreadsheet
 report, are what gets loaded into the lab's data warehouse.
 
 ### Input structure 
-- Input parent directory name must be exactly in `Model_Experiment` format.
-- Use exactly one underscore (`_`) in the parent directory name.
-- You may use dashes (`-`) inside the model or experiment names.
+- Input parent directory name must be in `Model_Experiment` format. The **first** underscore
+  separates the cell model from the experiment descriptor; both parts must be non-empty.
+- The descriptor is free-form after that, so `SNU719_Rta-Zta-2025-04` and `SNU719_Rta-Zta_2025-04`
+  are both valid and both describe the `SNU719` model.
+- **This name is permanent.** It becomes `experiment_id`, and `sample_id` and `comparison_id` are
+  built from it, so it has to be unique across the whole archive. If an experiment is ever
+  repeated, give the second one a distinguishing suffix such as a date — otherwise the two
+  produce identical sample IDs and any query grouped by sample silently pools them.
 - Parent directory must contain two condition subdirectories: `cntl` and `test`.
-- FASTQ files are placed inside those two condition folders.
+- FASTQ files are placed inside those two condition folders. The condition comes from the
+  directory, not from the filename, and replicate numbers are assigned by sorting filenames
+  within each condition (zero-pad past nine, or `cntl10` will sort before `cntl2`).
 
 Example:
 
