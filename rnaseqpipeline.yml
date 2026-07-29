@@ -20,6 +20,8 @@ dependencies:
   - pysam
   - rseqc=5.0.4
   - ucsc-wigtobigwig
+  - ucsc-bigwigaverageoverbed
+  - bedtools
   - perl
   - gsea
   - r-base
