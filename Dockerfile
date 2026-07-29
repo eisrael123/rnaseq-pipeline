@@ -18,6 +18,13 @@ ENV PATH="/opt/conda/envs/rnaseqpipeline/bin:${PATH}"
 # Copy scripts into image
 COPY . /work
 
+# The build context excludes .git, so the commit has to be passed in. Every result carries this
+# value through run_manifest.json, so an unidentifiable image is a failed build, not a warning.
+ARG GIT_COMMIT
+RUN test -n "$GIT_COMMIT" || { \
+      echo "ERROR: build with --build-arg GIT_COMMIT=\$(git rev-parse HEAD)" >&2; exit 1; } \
+    && printf '%s\n' "$GIT_COMMIT" > /work/VERSION
+
 # rnaseq.py calls R/Perl/Python helpers at /Applications/ngs/pipelines/rnaseq/scripts/...
 # The repo lives in /work; symlink so those hardcoded paths work in Linux containers.
 RUN mkdir -p /Applications/ngs/pipelines/rnaseq && \

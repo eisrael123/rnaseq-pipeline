@@ -4,4 +4,7 @@
 .Rhistory
 __pycache__/
 *.pyc
+.pytest_cache/
 
+# Repository content that happens to use ignored extensions.
+!docs/*.txt
