@@ -7,7 +7,7 @@ import tables_rmats
 from outputs import RunContext
 from schemas import EVENT_TYPES, RMATS_COORD_SLOTS, event_key, table as get_table
 
-from conftest import EXPERIMENT_ID, GENOME_BUILD, RUN_ID, write_rmats
+from conftest import EXPERIMENT_ID, GENOME_BUILD, write_rmats
 
 
 def test_every_event_type_has_a_coordinate_mapping():

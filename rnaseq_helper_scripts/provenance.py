@@ -286,6 +286,44 @@ class Manifest:
         return self.path
 
 
+# Documented in docs/SCHEMA.md, which is generated from this list. start_run() asserts that the
+# manifest it builds has exactly these keys, so a new field cannot be added without documenting it.
+MANIFEST_FIELDS = (
+    ("run_id", "`R` + 12 hex characters, derived from experiment, start time and commit. "
+               "Joins to the `run_id` column of every table."),
+    ("experiment_id", "Input directory name, `Model_Experiment`."),
+    ("pipeline_version", "Version of this pipeline's output contract."),
+    ("git_commit", "Commit the code was run from."),
+    ("git_dirty", "`true` if the working tree had uncommitted changes. Results from a dirty "
+                  "tree are not reproducible from the commit alone."),
+    ("docker_image_digest", "Image the run executed in."),
+    ("docker_image_digest_source", "How the digest was obtained: the runner's environment, "
+                                   "`/work/VERSION`, or the local git commit for a bare run."),
+    ("genome_build", "Reference build name, matching a directory under `reference_dir`."),
+    ("annotation_version", "GTF version, e.g. `gencode_v44`. Read from an "
+                           "`ANNOTATION_VERSION` marker, the GTF header, or `--annotation-version`."),
+    ("reference_dir", "Path to the reference directory as mounted."),
+    ("reference_dir_sha256", "Digest over the reference file inventory, so two runs against "
+                             "different references are distinguishable."),
+    ("investigator", "Who ran it."),
+    ("library_layout", "`PE` or `SE`."),
+    ("run_start_utc", "ISO 8601, UTC."),
+    ("run_end_utc", "ISO 8601, UTC. `null` while the run is in progress."),
+    ("exit_status", "`running`, `success` or `failed`."),
+    ("tool_versions", "Object mapping tool name to version string, captured at runtime rather "
+                      "than hardcoded."),
+    ("parameters", "Object recording the non-default arguments passed to each tool."),
+)
+
+# Added as the run progresses; absent from a manifest written at startup.
+OPTIONAL_MANIFEST_FIELDS = (
+    ("stage_status", "Object mapping stage name to `ok`, `skipped` or `partial`."),
+    ("failed_stage", "Stage that raised, present only when `exit_status` is `failed`."),
+    ("error", "Exception type and message, present only when `exit_status` is `failed`."),
+    ("validation", "Result of `validate_outputs.py`: `status`, `failures` and `warnings`."),
+)
+
+
 def start_run(*, results_dir: Path, reference_dir: Path, scripts_dir: Path, experiment_id: str,
               genome_build: str, investigator: str, library_layout: str,
               parameters: dict, annotation_version_override: str | None = None) -> Manifest:
@@ -316,4 +354,11 @@ def start_run(*, results_dir: Path, reference_dir: Path, scripts_dir: Path, expe
         "tool_versions": collect_tool_versions(),
         "parameters": parameters,
     }
+
+    documented = [name for name, _ in MANIFEST_FIELDS]
+    if list(data) != documented:
+        raise ProvenanceError(
+            "the manifest and MANIFEST_FIELDS disagree; add the field to MANIFEST_FIELDS and "
+            f"regenerate docs/SCHEMA.md.\n  built: {list(data)}\n  documented: {documented}"
+        )
     return Manifest(results_dir, data)
