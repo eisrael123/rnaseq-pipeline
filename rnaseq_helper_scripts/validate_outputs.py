@@ -9,6 +9,7 @@ Exits non-zero with a numbered list of failures. Called automatically at the end
 
 from __future__ import annotations
 
+import argparse
 import json
 import re
 import sys
@@ -196,22 +197,29 @@ def validate(results_dir: Path) -> Report:
 
     # 9. Housekeeping.
     for path in sorted(results_dir.rglob("*")):
+        relative = path.relative_to(results_dir)
         if path.name == ".DS_Store":
-            report.fail(f"{path.relative_to(results_dir)}: .DS_Store must not be shipped")
+            report.fail(f"{relative}: .DS_Store must not be shipped")
         elif path.is_file() and path.stat().st_size == 0:
-            report.fail(f"{path.relative_to(results_dir)}: zero-byte file")
+            # An empty log means the stage had nothing to say, which is normal. An empty
+            # table or manifest means a stage produced nothing, which is not.
+            if relative.parts[0] == "logs" or path.suffix in (".log", ".err"):
+                report.warn(f"{relative}: zero-byte file")
+            else:
+                report.fail(f"{relative}: zero-byte file")
 
     return report
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 1:
-        print(__doc__)
-        return 2
-    results_dir = Path(argv[0])
+    parser = argparse.ArgumentParser(
+        description="Check a results directory against the output contract in docs/SCHEMA.md.")
+    parser.add_argument("results_dir", type=Path)
+    args = parser.parse_args(argv)
+
+    results_dir = args.results_dir
     if not results_dir.is_dir():
-        print(f"ERROR: no such directory: {results_dir}")
-        return 2
+        parser.error(f"no such directory: {results_dir}")
 
     report = validate(results_dir)
     for index, warning in enumerate(report.warnings, start=1):
