@@ -197,6 +197,9 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     experiment.add_argument("--induced-program",
                             help=f"biological program induced; one of: "
                                  f"{', '.join(sorted(vocab.INDUCED_PROGRAMS))}")
+    experiment.add_argument("--library-selection",
+                            help=f"RNA selection before library prep; one of: "
+                                 f"{', '.join(sorted(vocab.LIBRARY_SELECTIONS))}")
     experiment.add_argument("--perturbation-target", help="e.g. BMRF1, SRSF1, CC115")
     experiment.add_argument("--perturbation-dose", help="e.g. 100nM")
     experiment.add_argument("--timepoint-hours", help="hours post perturbation, or NA")
@@ -296,6 +299,14 @@ def main(argv: list[str]) -> None:
             timepoint_hours = str(float(timepoint_hours))
         except ValueError:
             fail(f"timepoint_hours must be a number or NA, got {timepoint_hours!r}")
+    # No default, deliberately. Most of the archive is polyA, so defaulting would be right most
+    # of the time and silently wrong for the ribodepleted runs -- and wrong in the direction that
+    # makes a query look answerable when it is not.
+    library_selection = resolve(
+        "library_selection", args.library_selection,
+        prompt=f"Library selection ({'/'.join(sorted(vocab.LIBRARY_SELECTIONS))})",
+        allowed=vocab.LIBRARY_SELECTIONS, interactive=interactive, flag="--library-selection",
+    )
     sequencing_run_date = resolve(
         "sequencing_run_date", args.sequencing_run_date,
         prompt="Sequencing run date (YYYY-MM-DD, or NA)", interactive=interactive,
@@ -348,6 +359,7 @@ def main(argv: list[str]) -> None:
             "perturbation_dose": perturbation_dose if condition == "test" else NA,
             "timepoint_hours": timepoint_hours,
             "library_layout": library_layout,
+            "library_selection": library_selection,
             # Filled in by rnaseq.py once RSeQC has run (Task 14).
             "strandedness": NA,
             "fastq_r1": str(r1),

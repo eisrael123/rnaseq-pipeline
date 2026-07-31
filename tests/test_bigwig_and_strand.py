@@ -112,6 +112,25 @@ def test_cpm_scale_factor():
         bigwig.scale_factor(0)
 
 
+def test_bed_dedupe_drops_exact_and_name_collisions(tmp_path):
+    """bigWigAverageOverBed rejects duplicate names; ERCC rows in the lab BED are exact dups."""
+    bed = tmp_path / "features.bed"
+    bed.write_text(
+        "chr1\t0\t10\tGENE_A\t0\t+\n"
+        "chr1\t0\t10\tGENE_A\t0\t+\n"          # exact duplicate
+        "chrERCC\t0\t100\tDQ459430\t100\t+\n"
+        "chrERCC\t0\t100\tDQ459430\t100\t+\n"  # exact duplicate (the smoke-run failure)
+        "chr2\t0\t5\tGENE_B\t0\t-\n"
+        "chr2\t10\t20\tGENE_B\t0\t-\n"         # same name, different interval -> keep first
+    )
+    out = tmp_path / "dedup.bed"
+    result = bigwig._bed_with_unique_names(bed, out)
+    lines = [line for line in result.read_text().splitlines() if line.strip()]
+    names = [line.split("\t")[3] for line in lines]
+    assert names == ["GENE_A", "DQ459430", "GENE_B"]
+    assert len(lines) == 3
+
+
 def test_wig_rescaling_preserves_declarations(tmp_path):
     source = tmp_path / "in.wig"
     source.write_text("variableStep chrom=chr1\n1\t10\n2\t20\n")

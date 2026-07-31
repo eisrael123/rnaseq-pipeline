@@ -19,6 +19,9 @@ PERTURBATION_TYPE="<transfection|siRNA|drug|BCR-crosslink|none>"
 INDUCED_PROGRAM="<lytic_reactivation|latency|none|unknown>"
 PERTURBATION_TARGET="<e.g. BMRF1, or NA>"
 PERTURBATION_DOSE="<e.g. 100nM, or NA>"
+# polyA selection vs rRNA depletion. There is no default: expression is not comparable across
+# the two, so a wrong value here is worse than no run at all.
+LIBRARY_SELECTION="<polyA|ribodepleted|unknown>"
 TIMEPOINT_HOURS="<e.g. 24, or NA>"
 SEQUENCING_RUN_DATE="<YYYY-MM-DD, or NA>"
 NOTES=""
@@ -53,6 +56,7 @@ docker run --rm \
     --induced-program '${INDUCED_PROGRAM}' \
     --perturbation-target '${PERTURBATION_TARGET}' \
     --perturbation-dose '${PERTURBATION_DOSE}' \
+    --library-selection '${LIBRARY_SELECTION}' \
     --timepoint-hours '${TIMEPOINT_HOURS}' \
     --sequencing-run-date '${SEQUENCING_RUN_DATE}' \
     --notes '${NOTES}' && \

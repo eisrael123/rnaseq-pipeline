@@ -425,6 +425,12 @@ METADATA = Table(
         _c("perturbation_dose", "str", notes="`NA` if not applicable."),
         _c("timepoint_hours", "float", notes="`NA` if not applicable."),
         _c("library_layout", "enum", ("PE", "SE")),
+        _c("library_selection", "enum", ("polyA", "ribodepleted", "unknown"),
+           notes="RNA selection before library construction. Not a comparable axis: "
+                 "non-polyadenylated and unprocessed transcripts are absent from `polyA` "
+                 "libraries by construction, so expression must not be compared across "
+                 "differing values without saying so. `unknown` is an unrecorded value, used "
+                 "for backfilled legacy runs."),
         _c("strandedness", "str", notes="Filled in by the RSeQC step; `NA` until then."),
         _c("fastq_r1", "str", notes="Absolute path, as mounted."),
         _c("fastq_r2", "str", notes="`NA` for SE."),

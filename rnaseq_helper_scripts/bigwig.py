@@ -156,6 +156,43 @@ def feature_bed_files(reference_dir: Path, genome_build: str) -> dict[str, Path]
 AVERAGE_OVER_BED_COLUMNS = ["name", "size", "covered", "sum", "mean0", "mean", "min", "max"]
 
 
+def _bed_with_unique_names(bed: Path, scratch: Path) -> Path:
+    """Write a BED that ``bigWigAverageOverBed`` will accept.
+
+    UCSC's tool rejects duplicate names in column 4. The combined
+    ``hg38plusAkataInverted.bed`` has exact-duplicate ERCC rows (same interval, same
+    name twice), which aborted every ``signal_over_gene`` call. Collapse identical
+    lines and, if a name still appears more than once on distinct intervals, keep the
+    first and drop the rest — gene-level rollup does not need every isoform copy when
+    the name collides.
+    """
+    seen_lines: set[str] = set()
+    seen_names: set[str] = set()
+    kept = 0
+    dropped = 0
+    with open(bed, "r") as handle_in, open(scratch, "w") as handle_out:
+        for line in handle_in:
+            if not line.strip() or line.startswith(("track", "browser", "#")):
+                handle_out.write(line)
+                continue
+            if line in seen_lines:
+                dropped += 1
+                continue
+            seen_lines.add(line)
+            parts = line.rstrip("\n").split("\t")
+            name = parts[3] if len(parts) > 3 else ""
+            if name in seen_names:
+                dropped += 1
+                continue
+            seen_names.add(name)
+            handle_out.write(line)
+            kept += 1
+    if dropped:
+        print(f"WARNING: dropped {dropped} duplicate BED row(s) from {bed.name} "
+              f"({kept} unique names kept) so bigWigAverageOverBed can run.")
+    return scratch
+
+
 def _average_over_bed(bigwig: Path, bed: Path, output: Path) -> pd.DataFrame:
     command = ["bigWigAverageOverBed", "-minMax", str(bigwig), str(bed), str(output)]
     subprocess.run(command, check=True, capture_output=True, text=True)
@@ -179,38 +216,52 @@ def write_signal_over_gene(ctx: RunContext, results_dir: Path, reference_dir: Pa
         return 0, "skipped"
 
     scratch = results_dir / "logs" / "signal_over_gene.tmp"
+    # Deduplicate each feature BED once; bigWigAverageOverBed is then called per track.
+    unique_beds: dict[str, Path] = {}
+    for feature_set, bed in beds.items():
+        deduped = results_dir / "logs" / f"signal_over_gene.{feature_set}.dedup.bed"
+        unique_beds[feature_set] = _bed_with_unique_names(bed, deduped)
+
     frames = []
-    for row in manifest_rows:
-        if row["content"] != SIGNAL_CONTENT:
-            continue
-        bigwig = results_dir / row["file_path"]
-        for feature_set, bed in beds.items():
-            try:
-                raw = _average_over_bed(bigwig, bed, scratch)
-            except (subprocess.CalledProcessError, OSError) as error:
-                print(f"WARNING: bigWigAverageOverBed failed for {bigwig.name} / "
-                      f"{feature_set}: {error}")
+    try:
+        for row in manifest_rows:
+            if row["content"] != SIGNAL_CONTENT:
                 continue
-            # BED12 annotations are keyed by transcript; roll them up so the table is keyed by
-            # gene like every other table.
-            gene_ids = annotation.annotate_targets(raw["name"].astype(str))["gene_id"]
-            raw = raw.assign(gene_id=gene_ids.where(gene_ids != NA, raw["name"].astype(str)))
-            grouped = raw.groupby("gene_id", as_index=False).agg(
-                sum_coverage=("sum", "sum"),
-                covered_bases=("covered", "sum"),
-                feature_length=("size", "sum"),
-                max_coverage=("max", "max"),
-            )
-            grouped["mean_coverage"] = (
-                grouped["sum_coverage"] / grouped["feature_length"].where(
-                    grouped["feature_length"] > 0)
-            )
-            grouped["run_id"] = ctx.run_id
-            grouped["sample_id"] = row["sample_id"]
-            grouped["strand"] = row["strand"]
-            grouped["feature_set"] = feature_set
-            frames.append(grouped[SIGNAL_OVER_GENE.column_names])
-    scratch.unlink(missing_ok=True)
+            bigwig_path = results_dir / row["file_path"]
+            for feature_set, bed in unique_beds.items():
+                try:
+                    raw = _average_over_bed(bigwig_path, bed, scratch)
+                except (subprocess.CalledProcessError, OSError) as error:
+                    detail = ""
+                    if isinstance(error, subprocess.CalledProcessError) and error.stderr:
+                        detail = f" ({error.stderr.strip()[:200]})"
+                    print(f"WARNING: bigWigAverageOverBed failed for {bigwig_path.name} / "
+                          f"{feature_set}: {error}{detail}")
+                    continue
+                # BED12 annotations are keyed by transcript; roll them up so the table is keyed
+                # by gene like every other table.
+                gene_ids = annotation.annotate_targets(raw["name"].astype(str))["gene_id"]
+                raw = raw.assign(
+                    gene_id=gene_ids.where(gene_ids != NA, raw["name"].astype(str)))
+                grouped = raw.groupby("gene_id", as_index=False).agg(
+                    sum_coverage=("sum", "sum"),
+                    covered_bases=("covered", "sum"),
+                    feature_length=("size", "sum"),
+                    max_coverage=("max", "max"),
+                )
+                grouped["mean_coverage"] = (
+                    grouped["sum_coverage"] / grouped["feature_length"].where(
+                        grouped["feature_length"] > 0)
+                )
+                grouped["run_id"] = ctx.run_id
+                grouped["sample_id"] = row["sample_id"]
+                grouped["strand"] = row["strand"]
+                grouped["feature_set"] = feature_set
+                frames.append(grouped[SIGNAL_OVER_GENE.column_names])
+    finally:
+        scratch.unlink(missing_ok=True)
+        for bed in unique_beds.values():
+            bed.unlink(missing_ok=True)
 
     if not frames:
         write_table(results_dir, "signal_over_gene",

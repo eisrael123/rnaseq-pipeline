@@ -74,6 +74,7 @@ def write_metadata(results_dir: Path) -> pd.DataFrame:
             "induced_program": "lytic_reactivation",
             "perturbation_target": "Zta" if condition == "test" else "NA",
             "perturbation_dose": "NA", "timepoint_hours": "24.0", "library_layout": "PE",
+            "library_selection": "polyA",
             "strandedness": "NA", "fastq_r1": f"/data/{sample_name}_1.fq.gz",
             "fastq_r2": f"/data/{sample_name}_2.fq.gz", "fastq_r1_md5": "0" * 32,
             "fastq_r2_md5": "1" * 32, "investigator": "ethan",

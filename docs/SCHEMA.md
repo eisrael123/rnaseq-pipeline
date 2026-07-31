@@ -383,6 +383,7 @@ One row per FASTQ sample. Produced by metadata.py and copied into results_dir.
 | `perturbation_dose` | str | `NA` if not applicable. |
 | `timepoint_hours` | float | `NA` if not applicable. |
 | `library_layout` | enum: `PE` \| `SE` |  |
+| `library_selection` | enum: `polyA` \| `ribodepleted` \| `unknown` | RNA selection before library construction. Not a comparable axis: non-polyadenylated and unprocessed transcripts are absent from `polyA` libraries by construction, so expression must not be compared across differing values without saying so. `unknown` is an unrecorded value, used for backfilled legacy runs. |
 | `strandedness` | str | Filled in by the RSeQC step; `NA` until then. |
 | `fastq_r1` | str | Absolute path, as mounted. |
 | `fastq_r2` | str | `NA` for SE. |

@@ -21,6 +21,13 @@ INDUCED_PROGRAMS = frozenset({
 ORGANISMS = frozenset({"human", "mouse"})
 CONDITIONS = frozenset({"test", "cntl"})
 LIBRARY_LAYOUTS = frozenset({"PE", "SE"})
+# How RNA was selected before library construction. polyA selection and rRNA depletion see
+# different transcriptomes -- non-polyadenylated and unprocessed RNA is present in one and
+# absent by construction in the other -- so this is not a comparable axis: a gene that looks
+# absent may simply have been selected away. Recording it is what keeps a cross-experiment
+# query from reading a library-prep difference as biology. Values track the SRA/ENA
+# library_selection vocabulary (`PolyA`, `Inverse rRNA`) without its inconsistent casing.
+LIBRARY_SELECTIONS = frozenset({"polyA", "ribodepleted", "unknown"})
 
 # Genome build -> organism, so metadata.py can derive organism instead of asking for it.
 GENOME_BUILD_ORGANISM = {
@@ -46,6 +53,7 @@ VOCABULARIES = {
     "organism": ORGANISMS,
     "condition": CONDITIONS,
     "library_layout": LIBRARY_LAYOUTS,
+    "library_selection": LIBRARY_SELECTIONS,
 }
 
 

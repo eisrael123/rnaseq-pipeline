@@ -28,6 +28,7 @@ def test_vocab_rejects_unknown_value():
 def test_vocab_accepts_known_values():
     assert vocab.validate("cell_line", "SNU719") == "SNU719"
     assert vocab.validate("perturbation_type", "siRNA") == "siRNA"
+    assert vocab.validate("library_selection", "ribodepleted") == "ribodepleted"
     assert vocab.organism_for_build(GENOME_BUILD) == "human"
 
 
@@ -51,7 +52,7 @@ def experiment(tmp_path):
     return build_experiment(tmp_path)
 
 
-def run_metadata(experiment, cell_line):
+def run_metadata(experiment, cell_line, library_selection="polyA"):
     (experiment["results_dir"]).mkdir(exist_ok=True)
     environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
     return subprocess.run(
@@ -62,6 +63,7 @@ def run_metadata(experiment, cell_line):
          "--perturbation-type", "transfection", "--induced-program", "lytic_reactivation",
          "--perturbation-target", "Zta",
          "--perturbation-dose", "NA", "--timepoint-hours", "24",
+         "--library-selection", library_selection,
          "--sequencing-run-date", "2026-01-15"],
         capture_output=True, text=True, env=environment,
     )
@@ -121,12 +123,64 @@ def test_induced_program_rejects_free_text(experiment):
          "--non-interactive", "--cell-line", "SNU719",
          "--perturbation-type", "transfection", "--induced-program", "reactivation",
          "--perturbation-target", "Zta", "--perturbation-dose", "NA",
-         "--timepoint-hours", "24", "--sequencing-run-date", "2025-04-10"],
+         "--timepoint-hours", "24", "--library-selection", "polyA",
+         "--sequencing-run-date", "2025-04-10"],
         capture_output=True, text=True, env=environment,
     )
     assert result.returncode != 0
     assert "invalid induced_program" in result.stderr
     assert "lytic_reactivation" in result.stderr
+
+
+def test_library_selection_is_recorded_on_every_sample(experiment, tmp_path):
+    """polyA and ribodepleted libraries see different transcriptomes, so it is a stored field.
+
+    It is per sample rather than encoded in experiment_id: the archive is mostly polyA with a
+    few ribodepleted runs, and a query that pools them silently compares a transcript that was
+    selected away against one that was retained.
+    """
+    result = run_metadata(experiment, "SNU719")
+    assert result.returncode == 0, result.stderr
+    frame = pd.read_csv(experiment["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
+                        keep_default_na=False)
+    assert set(frame["library_selection"]) == {"polyA"}
+
+    ribo = build_experiment(tmp_path / "ribo", "Mutu_total-RNA_2025-06")
+    result = run_metadata(ribo, "Mutu", library_selection="ribodepleted")
+    assert result.returncode == 0, result.stderr
+    frame = pd.read_csv(ribo["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
+                        keep_default_na=False)
+    assert set(frame["library_selection"]) == {"ribodepleted"}
+
+
+def test_library_selection_rejects_free_text(experiment):
+    result = run_metadata(experiment, "SNU719", library_selection="rRNA-depleted")
+    assert result.returncode != 0
+    assert "invalid library_selection" in result.stderr
+    assert "ribodepleted" in result.stderr
+
+
+def test_library_selection_has_no_default(experiment):
+    """Most of the archive is polyA, which is exactly why guessing is not allowed.
+
+    A default would be right most of the time and wrong for the ribodepleted runs, and wrong
+    in the direction where nothing downstream can detect it.
+    """
+    environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
+    experiment["results_dir"].mkdir(exist_ok=True)
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "metadata.py"),
+         str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
+         "ethan", "PE", str(experiment["results_dir"]),
+         "--non-interactive", "--cell-line", "SNU719",
+         "--perturbation-type", "transfection", "--induced-program", "lytic_reactivation",
+         "--perturbation-target", "Zta", "--perturbation-dose", "NA",
+         "--timepoint-hours", "24", "--sequencing-run-date", "2025-04-10"],
+        capture_output=True, text=True, env=environment,
+    )
+    assert result.returncode != 0
+    assert "--library-selection" in result.stderr
+    assert not (experiment["results_dir"] / "metadata.tsv").exists()
 
 
 def test_experiment_name_may_carry_a_uniquifying_suffix(tmp_path):
@@ -156,7 +210,7 @@ def test_cell_line_still_defaults_from_the_first_segment(tmp_path):
          str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
          "ethan", "PE", str(experiment["results_dir"]),
          "--non-interactive", "--perturbation-type", "none",
-         "--induced-program", "unknown",
+         "--induced-program", "unknown", "--library-selection", "polyA",
          "--timepoint-hours", "NA", "--sequencing-run-date", "NA"],
         capture_output=True, text=True, env=environment,
     )

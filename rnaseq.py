@@ -733,7 +733,28 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
     if not gsea_cli_path:
         raise FileNotFoundError("Neither gsea-cli nor gsea-cli.sh was found in PATH.")
 
-    for gmt_file in gsea_reference_dir.glob("*.gmt"):
+    gmt_files = sorted(gsea_reference_dir.glob("*.gmt"))
+    stems = {p.stem.lower() for p in gmt_files}
+    # MSigDB ships GO both as the full C5 collection and as BP/MF/CC splits. The reference
+    # tree has gene_ontology plus biological_process and molecular_function; the full set is
+    # redundant, much larger, and is what OOM'd / crashed the smoke run after the splits had
+    # already succeeded. Skip it when the splits are present.
+    skip_full_go = (
+        any(s.startswith("gene_ontology") for s in stems)
+        and any(s.startswith("biological_process") for s in stems)
+        and any(s.startswith("molecular_function") for s in stems)
+    )
+
+    # GSEA is a fat Java process; conda's default heap is too small for the largest GMTs.
+    env = os.environ.copy()
+    if "GSEA_JVM_HEAP" not in env and "JAVA_TOOL_OPTIONS" not in env:
+        env["JAVA_TOOL_OPTIONS"] = "-Xmx16g"
+
+    for gmt_file in gmt_files:
+        if skip_full_go and gmt_file.stem.lower().startswith("gene_ontology"):
+            print(f"Skipping {gmt_file.name}: covered by biological_process + "
+                  f"molecular_function collections already in this reference set.")
+            continue
         rpt_label = gmt_file.stem
         command = [
             gsea_cli_path, "GSEA",
@@ -747,10 +768,17 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
             "-rpt_label", rpt_label
         ]
         try:
-            subprocess.run(command, check=True)
+            completed = subprocess.run(
+                command, check=True, env=env, capture_output=True, text=True)
+            if completed.stdout:
+                print(completed.stdout, end="" if completed.stdout.endswith("\n") else "\n")
             print(f"GSEA analysis completed successfully for {gmt_file}")
         except subprocess.CalledProcessError as e:
             print(f"GSEA analysis failed for {gmt_file}: {e}")
+            if e.stderr:
+                print(e.stderr[-2000:])
+            if e.stdout:
+                print(e.stdout[-1000:])
 
 def create_rnk_file(results_dir):
     """
@@ -825,12 +853,16 @@ def run_gsea_preranked(rnk_file, gsea_results_dir, gmt_file):
     ]
 
     try:
-        # Run the GSEA pre-ranked command
-        subprocess.run(cmd, check=True)
+        env = os.environ.copy()
+        if "GSEA_JVM_HEAP" not in env and "JAVA_TOOL_OPTIONS" not in env:
+            env["JAVA_TOOL_OPTIONS"] = "-Xmx16g"
+        subprocess.run(cmd, check=True, env=env, capture_output=True, text=True)
         print(f"✅ GSEA pre-ranked analysis completed successfully for '{gmt_file}'")
         return True
     except subprocess.CalledProcessError as e:
         print(f"Error running GSEA pre-ranked analysis for '{gmt_file}': {e}. Command: {' '.join(cmd)}")
+        if e.stderr:
+            print(e.stderr[-2000:])
         return False
 
 def check_and_prepare_rmats(metadata, results_dir, sample_names, library_types):
@@ -1672,6 +1704,12 @@ def organize_artifacts(results_dir, sample_names):
         if path.is_dir():
             shutil.rmtree(path)
 
+    # macOS Finder writes these onto network/local mounts while the run is in progress.
+    # The validator rejects them, so scrub before checksums/validation rather than failing
+    # a good analysis over desktop detritus.
+    for junk in results_dir.rglob(".DS_Store"):
+        junk.unlink(missing_ok=True)
+
 def process_sample(sample_name, fastq1, fastq2):
     import datetime
 
@@ -1916,6 +1954,18 @@ def run_enrichment(metadata, results_dir, species_name):
     Returns the mode used so the manifest records which flavour of GSEA produced
     gene_set_enrichment.tsv.
     """
+    gmt_dir = REFERENCE_DIR / species_name / "GSEA"
+    gmt_files = sorted(gmt_dir.glob("*.gmt"))
+    stems = {p.stem.lower() for p in gmt_files}
+    skip_full_go = (
+        any(s.startswith("gene_ontology") for s in stems)
+        and any(s.startswith("biological_process") for s in stems)
+        and any(s.startswith("molecular_function") for s in stems)
+    )
+    if skip_full_go:
+        gmt_files = [p for p in gmt_files
+                     if not p.stem.lower().startswith("gene_ontology")]
+
     condition_counts = metadata.groupby('Condition')['Sample name'].nunique()
     if (condition_counts < 3).any():
         print("Less than 3 replicates detected for one or more conditions. Running GSEA "
@@ -1924,7 +1974,7 @@ def run_enrichment(metadata, results_dir, species_name):
         if not rnk_file:
             raise RuntimeError("unable to create the .rnk file for GSEA pre-ranked analysis")
         gsea_results_dir = results_dir / "gsea"
-        for gmt_file in sorted((REFERENCE_DIR / species_name / "GSEA").glob("*.gmt")):
+        for gmt_file in gmt_files:
             run_gsea_preranked(rnk_file, gsea_results_dir, gmt_file)
         mode = "preranked"
     else:
@@ -2197,6 +2247,10 @@ def main():
         raise
 
     manifest.write("success")
+
+    # Finder can drop .DS_Store between organize and here on macOS-mounted volumes.
+    for junk in results_dir.rglob(".DS_Store"):
+        junk.unlink(missing_ok=True)
 
     report = validate_outputs.validate(results_dir)
     for warning in report.warnings:

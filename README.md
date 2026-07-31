@@ -144,9 +144,9 @@ This pipeline is **computationally and memory intensive**. Do **not** run multip
 years later. It prompts for each of these; pass them as flags to skip the prompts, and add
 `--non-interactive` to make a missing value an error instead:
 
-- `--cell-line`, `--organism`, `--perturbation-type`, `--induced-program`: controlled
-  vocabularies. An unrecognized value is rejected with the list of allowed values. To add one,
-  edit `rnaseq_helper_scripts/vocab.py`.
+- `--cell-line`, `--organism`, `--perturbation-type`, `--induced-program`,
+  `--library-selection`: controlled vocabularies. An unrecognized value is rejected with the
+  list of allowed values. To add one, edit `rnaseq_helper_scripts/vocab.py`.
 - `--perturbation-target` (e.g. `BMRF1`), `--perturbation-dose` (e.g. `100nM`),
   `--timepoint-hours`, `--sequencing-run-date`, `--notes`.
 
@@ -157,6 +157,15 @@ Rta transfection, by TPA/butyrate, or by BCR crosslinking — keeping them apart
 `--perturbation-*` fields, `--induced-program` describes the experiment and so is recorded on
 control samples too. Use `unknown` for an unrecoverable value and `none` for a recorded absence;
 they are not the same thing.
+
+`--library-selection` is `polyA` or `ribodepleted` (or `unknown` when backfilling older runs),
+and it has no default on purpose. It is not a comparable axis: non-polyadenylated and
+unprocessed transcripts are absent from a polyA library by construction, so the same gene can
+read as absent in one library and abundant in another for reasons that have nothing to do with
+the biology. Recording it per sample is what lets a cross-experiment query either filter to one
+selection method or state that it is mixing them; defaulting it would make the archive quietly
+claim otherwise. It sits alongside `library_layout` (`PE`/`SE`) and the RSeQC-inferred
+`strandedness` in `metadata.tsv`.
 
 #### For rnaseq.py: 
 - `<metadata_file>`: The file path of generated metadata tsv file `output_dir/*.tsv`.
@@ -247,8 +256,8 @@ Edit variables at the top of `run_pipeline_one_shot.sh` before running:
 - `INVESTIGATOR_NAME`
 - `EXPERIMENT_TYPE` (`PE` or `SE`)
 - `CELL_LINE`, `PERTURBATION_TYPE`, `PERTURBATION_TARGET`, `PERTURBATION_DOSE`,
-  `TIMEPOINT_HOURS`, `SEQUENCING_RUN_DATE` — the script runs `metadata.py --non-interactive`,
-  so all of these must be filled in.
+  `LIBRARY_SELECTION`, `TIMEPOINT_HOURS`, `SEQUENCING_RUN_DATE` — the script runs
+  `metadata.py --non-interactive`, so all of these must be filled in.
 
 ### Checklist
 - Parent folder naming follows `Model_Experiment` (single underscore).
