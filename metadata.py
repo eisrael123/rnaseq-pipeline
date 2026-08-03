@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# metadata.py
+# metadata.pyIt 
 #
 # Usage: metadata.py --root-fastq-dir DIR --output-dir DIR [--quick-input | run/experiment flags]
 #
@@ -70,8 +70,9 @@ PLACEHOLDER_NAMES = frozenset({"Model_Experiment", "model_experiment", "CellLine
 QUICK_INPUT_FILENAME = "input_args.json"
 QUICK_INPUT_FIELDS = frozenset({
     "reference_dir", "species_name", "investigator_name", "experiment_type",
-    "cell_line", "perturbation_type", "induced_program", "library_selection",
-    "perturbation_target", "perturbation_dose", "timepoint_hours",
+    "cell_line", "perturbation_type", "perturbation_agent", "perturbation_target",
+    "perturbation_dose", "co_treatment", "co_treatment_target", "facs_purified",
+    "facs_gfp_promoter", "library_selection", "library_strandedness", "timepoint_hours",
     "sequencing_run_date", "notes",
 })
 
@@ -259,15 +260,27 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     experiment.add_argument("--cell-line", help=f"one of: {', '.join(sorted(vocab.CELL_LINES))}")
     experiment.add_argument("--organism", help=f"one of: {', '.join(sorted(vocab.ORGANISMS))}")
     experiment.add_argument("--perturbation-type",
-                            help=f"one of: {', '.join(sorted(vocab.PERTURBATION_TYPES))}")
-    experiment.add_argument("--induced-program",
-                            help=f"biological program induced; one of: "
-                                 f"{', '.join(sorted(vocab.INDUCED_PROGRAMS))}")
+                            help=f"how it was delivered; one of: "
+                                 f"{', '.join(sorted(vocab.PERTURBATION_TYPES))}")
     experiment.add_argument("--library-selection",
                             help=f"RNA selection before library prep; one of: "
                                  f"{', '.join(sorted(vocab.LIBRARY_SELECTIONS))}")
-    experiment.add_argument("--perturbation-target", help="e.g. BMRF1, SRSF1, CC115")
-    experiment.add_argument("--perturbation-dose", help="e.g. 100nM")
+    experiment.add_argument("--library-strandedness",
+                            help=f"intended at library prep; one of: "
+                                 f"{', '.join(sorted(vocab.LIBRARY_STRANDEDNESS_VALUES))}")
+    experiment.add_argument("--perturbation-agent",
+                            help="what was delivered, e.g. Zta, Rta, Zta+Rta, anti-IgG, CC115")
+    experiment.add_argument("--perturbation-target",
+                            help="the gene the agent acts on, e.g. BMRF1, SRSF1, or NA")
+    experiment.add_argument("--perturbation-dose", help="e.g. 5ug+5ug, 100nM, or NA")
+    experiment.add_argument("--co-treatment",
+                            help=f"one of: {', '.join(sorted(vocab.CO_TREATMENTS))}")
+    experiment.add_argument("--co-treatment-target",
+                            help=f"one of: {', '.join(sorted(vocab.CO_TREATMENT_TARGETS))}")
+    experiment.add_argument("--facs-purified",
+                            help=f"one of: {', '.join(sorted(vocab.FACS_PURIFIED_VALUES))}")
+    experiment.add_argument("--facs-gfp-promoter",
+                            help=f"one of: {', '.join(sorted(vocab.FACS_GFP_PROMOTERS))}")
     experiment.add_argument("--timepoint-hours", help="hours post perturbation, or NA")
     experiment.add_argument("--sequencing-run-date", help="ISO 8601 date, or NA")
     experiment.add_argument("--notes", help="free text")
@@ -357,19 +370,19 @@ def main(argv: list[str]) -> None:
         allowed=vocab.PERTURBATION_TYPES, interactive=interactive, flag="--perturbation-type",
         from_form=form.get("perturbation_type"),
     )
-    induced_program = resolve(
-        "induced_program", args.induced_program,
-        prompt=f"Induced program ({'/'.join(sorted(vocab.INDUCED_PROGRAMS))})",
-        allowed=vocab.INDUCED_PROGRAMS, interactive=interactive, flag="--induced-program",
-        from_form=form.get("induced_program"),
-    )
     if perturbation_type == "none":
+        perturbation_agent = NA
         perturbation_target = NA
         perturbation_dose = NA
     else:
+        perturbation_agent = resolve(
+            "perturbation_agent", args.perturbation_agent,
+            prompt="Perturbation agent (e.g. Zta, anti-IgG)", interactive=interactive,
+            flag="--perturbation-agent", from_form=form.get("perturbation_agent"),
+        )
         perturbation_target = resolve(
             "perturbation_target", args.perturbation_target,
-            prompt="Perturbation target (e.g. BMRF1)", interactive=interactive,
+            prompt="Perturbation target (e.g. BMRF1, or NA)", interactive=interactive,
             flag="--perturbation-target", from_form=form.get("perturbation_target"),
         )
         perturbation_dose = resolve(
@@ -377,6 +390,35 @@ def main(argv: list[str]) -> None:
             prompt="Perturbation dose (e.g. 100nM, or NA)", interactive=interactive,
             flag="--perturbation-dose", from_form=form.get("perturbation_dose"),
         )
+    co_treatment = resolve(
+        "co_treatment", args.co_treatment,
+        prompt=f"Co-treatment ({'/'.join(sorted(vocab.CO_TREATMENTS))})",
+        allowed=vocab.CO_TREATMENTS, interactive=interactive, flag="--co-treatment",
+        from_form=form.get("co_treatment"),
+    )
+    # Same shape as the perturbation_* block above: no co-treatment means there is nothing for it
+    # to act on, so the target is a recorded absence rather than something to ask for.
+    if co_treatment == "none":
+        co_treatment_target = NA
+    else:
+        co_treatment_target = resolve(
+            "co_treatment_target", args.co_treatment_target,
+            prompt=f"Co-treatment target ({'/'.join(sorted(vocab.CO_TREATMENT_TARGETS))})",
+            allowed=vocab.CO_TREATMENT_TARGETS, interactive=interactive,
+            flag="--co-treatment-target", from_form=form.get("co_treatment_target"),
+        )
+    facs_purified = resolve(
+        "facs_purified", args.facs_purified,
+        prompt=f"FACS purified ({'/'.join(sorted(vocab.FACS_PURIFIED_VALUES))})",
+        allowed=vocab.FACS_PURIFIED_VALUES, interactive=interactive, flag="--facs-purified",
+        from_form=form.get("facs_purified"),
+    )
+    facs_gfp_promoter = resolve(
+        "facs_gfp_promoter", args.facs_gfp_promoter,
+        prompt=f"FACS GFP promoter ({'/'.join(sorted(vocab.FACS_GFP_PROMOTERS))})",
+        allowed=vocab.FACS_GFP_PROMOTERS, interactive=interactive,
+        flag="--facs-gfp-promoter", from_form=form.get("facs_gfp_promoter"),
+    )
     timepoint_hours = resolve(
         "timepoint_hours", args.timepoint_hours, prompt="Timepoint in hours (or NA)",
         interactive=interactive, flag="--timepoint-hours",
@@ -398,6 +440,12 @@ def main(argv: list[str]) -> None:
         prompt=f"Library selection ({'/'.join(sorted(vocab.LIBRARY_SELECTIONS))})",
         allowed=vocab.LIBRARY_SELECTIONS, interactive=interactive, flag="--library-selection",
         from_form=form.get("library_selection"),
+    )
+    library_strandedness = resolve(
+        "library_strandedness", args.library_strandedness,
+        prompt=f"Library strandedness ({'/'.join(sorted(vocab.LIBRARY_STRANDEDNESS_VALUES))})",
+        allowed=vocab.LIBRARY_STRANDEDNESS_VALUES, interactive=interactive,
+        flag="--library-strandedness", from_form=form.get("library_strandedness"),
     )
     sequencing_run_date = resolve(
         "sequencing_run_date", args.sequencing_run_date,
@@ -446,15 +494,19 @@ def main(argv: list[str]) -> None:
             "organism": organism,
             "genome_build": genome_build,
             "perturbation_type": perturbation_type if condition == "test" else "none",
-            # Experiment-level, unlike the perturbation_* fields: it describes the design, so it
-            # is on control rows too. "Every sample from a reactivation experiment" is then one
-            # filter rather than a subquery back through experiment_id.
-            "induced_program": induced_program,
+            "perturbation_agent": perturbation_agent if condition == "test" else NA,
             "perturbation_target": perturbation_target if condition == "test" else NA,
             "perturbation_dose": perturbation_dose if condition == "test" else NA,
+            "co_treatment": co_treatment if condition == "test" else "none",
+            "co_treatment_target": co_treatment_target if condition == "test" else NA,
+            # Properties of the sequenced material rather than of the perturbation, so they are
+            # recorded on control rows too: the controls were sorted and prepped the same way.
+            "facs_purified": facs_purified,
+            "facs_gfp_promoter": facs_gfp_promoter,
             "timepoint_hours": timepoint_hours,
             "library_layout": library_layout,
             "library_selection": library_selection,
+            "library_strandedness": library_strandedness,
             # Filled in by rnaseq.py once RSeQC has run (Task 14).
             "strandedness": NA,
             "fastq_r1": str(r1),

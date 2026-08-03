@@ -51,7 +51,6 @@
   .field { margin-top: 1.1rem; }
   .field:first-of-type { margin-top: .25rem; }
   label.name { display: block; font-weight: 600; margin-bottom: .3rem; }
-  .hint { display: block; color: var(--muted); font-size: .85rem; margin-top: .3rem; }
   input[type="text"], input[type="number"], input[type="date"], select, textarea {
     width: 100%;
     padding: .55rem .6rem;
@@ -128,8 +127,6 @@
       <div class="field">
         <label class="name" for="investigator_name">Investigator name</label>
         <input type="text" id="investigator_name" required placeholder="e.g. ethan">
-        <span class="hint">Spaces are removed automatically &mdash; this becomes part of the
-        output filename.</span>
       </div>
 
       <div class="field">
@@ -143,7 +140,6 @@
           <option value="mm39">mm39</option>
           <option value="mm39plusMHV68">mm39plusMHV68</option>
         </select>
-        <span class="hint">Organism is derived from this, so there is nothing else to set.</span>
       </div>
 
       <div class="field">
@@ -158,7 +154,6 @@
       <div class="field">
         <label class="name" for="reference_dir">Reference files</label>
         <input type="text" id="reference_dir" value="/data/referenceFiles" readonly>
-        <span class="hint">Fixed location inside the pipeline container. Nothing to change.</span>
       </div>
     </fieldset>
 
@@ -175,8 +170,10 @@
           <option value="HEK293">HEK293</option>
           <option value="HepG2">HepG2</option>
           <option value="Mutu">Mutu</option>
+          <option value="P3HR1">P3HR1</option>
           <option value="Raji">Raji</option>
           <option value="SNU719">SNU719</option>
+          <option value="YCCEL1">YCCEL1</option>
         </select>
       </div>
 
@@ -185,30 +182,25 @@
         <select id="perturbation_type" required>
           <option value="">&mdash; select &mdash;</option>
           <option value="transfection">transfection</option>
-          <option value="siRNA">siRNA</option>
-          <option value="drug">drug</option>
+          <option value="chemical">chemical</option>
           <option value="BCR-crosslink">BCR-crosslink</option>
           <option value="none">none</option>
         </select>
-        <span class="hint"><em>How</em> the perturbation was delivered.</span>
       </div>
 
-      <div class="field">
-        <label class="name" for="induced_program">Induced program</label>
-        <select id="induced_program" required>
-          <option value="">&mdash; select &mdash;</option>
-          <option value="lytic_reactivation">lytic_reactivation</option>
-          <option value="latency">latency</option>
-          <option value="none">none</option>
-          <option value="unknown">unknown</option>
-        </select>
-        <span class="hint"><em>What</em> it was meant to induce. <code>none</code> is a recorded
-        absence; <code>unknown</code> means nobody wrote it down. They are not the same.</span>
+      <div class="field" id="agent_field">
+        <label class="name" for="perturbation_agent">Perturbation agent</label>
+        <input type="text" id="perturbation_agent"
+               placeholder="e.g. Zta, Rta, Zta+Rta, anti-IgG, CC115">
       </div>
 
       <div class="field" id="target_field">
         <label class="name" for="perturbation_target">Perturbation target</label>
-        <input type="text" id="perturbation_target" placeholder="e.g. BMRF1, SRSF1, CC115">
+        <div class="with-na">
+          <input type="text" id="perturbation_target" placeholder="e.g. BMRF1, SRSF1">
+          <label class="na-toggle"><input type="checkbox" id="perturbation_target_na"> Not
+          applicable</label>
+        </div>
       </div>
 
       <div class="field" id="dose_field">
@@ -221,13 +213,60 @@
       </div>
 
       <div class="field">
+        <label class="name" for="co_treatment">Co-treatment</label>
+        <select id="co_treatment" required>
+          <option value="">&mdash; select &mdash;</option>
+          <option value="none">none</option>
+          <option value="PAA">PAA</option>
+          <option value="siRNA">siRNA</option>
+          <option value="CRISPR">CRISPR</option>
+          <option value="unknown">unknown</option>
+        </select>
+      </div>
+
+      <div class="field" id="co_treatment_target_field">
+        <label class="name" for="co_treatment_target">Co-treatment target</label>
+        <select id="co_treatment_target">
+          <option value="">&mdash; select &mdash;</option>
+          <option value="PAA_replication">PAA_replication</option>
+          <option value="CNOT1">CNOT1</option>
+          <option value="CNOT9">CNOT9</option>
+          <option value="UPF1">UPF1</option>
+          <option value="EXOSC3">EXOSC3</option>
+          <option value="NAT10">NAT10</option>
+          <option value="TET1">TET1</option>
+          <option value="BRRF1">BRRF1</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="name" for="facs_purified">FACS purified</label>
+        <select id="facs_purified" required>
+          <option value="">&mdash; select &mdash;</option>
+          <option value="yes">yes</option>
+          <option value="no">no</option>
+          <option value="unknown">unknown</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label class="name" for="facs_gfp_promoter">FACS GFP promoter</label>
+        <select id="facs_gfp_promoter" required>
+          <option value="">&mdash; select &mdash;</option>
+          <option value="pCMV">pCMV</option>
+          <option value="BMRF1p">BMRF1p</option>
+          <option value="none">none</option>
+          <option value="unknown">unknown</option>
+        </select>
+      </div>
+
+      <div class="field">
         <label class="name" for="timepoint_hours">Timepoint (hours)</label>
         <div class="with-na">
           <input type="number" id="timepoint_hours" min="0" step="any" placeholder="e.g. 24">
           <label class="na-toggle"><input type="checkbox" id="timepoint_hours_na"> Not
           applicable</label>
         </div>
-        <span class="hint">Hours after the perturbation that the samples were collected.</span>
       </div>
 
       <div class="field">
@@ -238,8 +277,16 @@
           <option value="ribodepleted">ribodepleted</option>
           <option value="unknown">unknown</option>
         </select>
-        <span class="hint">There is deliberately no default. polyA and ribodepleted libraries see
-        different transcriptomes, so a guess here is worse than no run at all.</span>
+      </div>
+
+      <div class="field">
+        <label class="name" for="library_strandedness">Library strandedness</label>
+        <select id="library_strandedness" required>
+          <option value="">&mdash; select &mdash;</option>
+          <option value="stranded">stranded</option>
+          <option value="unstranded">unstranded</option>
+          <option value="unknown">unknown</option>
+        </select>
       </div>
 
       <div class="field">
@@ -252,8 +299,7 @@
       </div>
 
       <div class="field">
-        <label class="name" for="notes">Notes <span class="hint"
-          style="display:inline; font-weight:400;">(optional)</span></label>
+        <label class="name" for="notes">Notes</label>
         <textarea id="notes" placeholder="Anything worth knowing years from now."></textarea>
       </div>
     </fieldset>
@@ -277,11 +323,15 @@ var status = document.getElementById("status");
 var downloadButton = document.getElementById("download");
 var investigator = document.getElementById("investigator_name");
 var perturbationType = document.getElementById("perturbation_type");
+var coTreatment = document.getElementById("co_treatment");
+var agentField = document.getElementById("agent_field");
 var targetField = document.getElementById("target_field");
 var doseField = document.getElementById("dose_field");
+var coTreatmentTargetField = document.getElementById("co_treatment_target_field");
 
 // Every field written to the file, paired with the checkbox that overrides it with NA.
 var NA_PAIRS = [
+  ["perturbation_target", "perturbation_target_na"],
   ["perturbation_dose", "perturbation_dose_na"],
   ["timepoint_hours", "timepoint_hours_na"],
   ["sequencing_run_date", "sequencing_run_date_na"]
@@ -317,16 +367,25 @@ NA_PAIRS.forEach(function (pair) {
   });
 });
 
-// A control arm has nothing to target or dose; metadata.py writes NA for both when the
-// perturbation type is "none", so asking for them here would be asking for discarded input.
+// A control arm has nothing to deliver, target or dose; metadata.py writes NA for all three when
+// the perturbation type is "none", so asking here would be asking for discarded input.
+// Only an explicit "none" hides them: while the dropdown is still unselected these fields have
+// to be visible, or the form opens with four of its inputs missing for no stated reason.
 function perturbationApplies() {
-  return perturbationType.value !== "" && perturbationType.value !== "none";
+  return perturbationType.value !== "none";
 }
 
-function syncPerturbationFields() {
+// Same reasoning one level down: no co-treatment means nothing for it to act on.
+function coTreatmentApplies() {
+  return coTreatment.value !== "none";
+}
+
+function syncConditionalFields() {
   var applies = perturbationApplies();
+  agentField.classList.toggle("hidden", !applies);
   targetField.classList.toggle("hidden", !applies);
   doseField.classList.toggle("hidden", !applies);
+  coTreatmentTargetField.classList.toggle("hidden", !coTreatmentApplies());
 }
 
 function missingFields() {
@@ -337,8 +396,11 @@ function missingFields() {
     ["experiment_type", "library layout"],
     ["cell_line", "cell line"],
     ["perturbation_type", "perturbation type"],
-    ["induced_program", "induced program"],
-    ["library_selection", "library selection"]
+    ["co_treatment", "co-treatment"],
+    ["facs_purified", "FACS purified"],
+    ["facs_gfp_promoter", "FACS GFP promoter"],
+    ["library_selection", "library selection"],
+    ["library_strandedness", "library strandedness"]
   ];
   required.forEach(function (entry) {
     if (value(entry[0]) === "") {
@@ -347,12 +409,18 @@ function missingFields() {
   });
 
   if (perturbationApplies()) {
-    if (value("perturbation_target") === "") {
+    if (value("perturbation_agent") === "") {
+      missing.push("perturbation agent");
+    }
+    if (value("perturbation_target") === "" && !checked("perturbation_target_na")) {
       missing.push("perturbation target");
     }
     if (value("perturbation_dose") === "" && !checked("perturbation_dose_na")) {
       missing.push("perturbation dose");
     }
+  }
+  if (coTreatmentApplies() && value("co_treatment_target") === "") {
+    missing.push("co-treatment target");
   }
   if (value("timepoint_hours") === "" && !checked("timepoint_hours_na")) {
     missing.push("timepoint");
@@ -364,7 +432,7 @@ function missingFields() {
 }
 
 function refresh() {
-  syncPerturbationFields();
+  syncConditionalFields();
   var missing = missingFields();
   downloadButton.disabled = missing.length > 0;
   if (missing.length === 0) {
@@ -385,12 +453,18 @@ function collect() {
     experiment_type: value("experiment_type"),
     cell_line: value("cell_line"),
     perturbation_type: value("perturbation_type"),
-    induced_program: value("induced_program"),
-    perturbation_target: applies ? value("perturbation_target") : NA,
+    perturbation_agent: applies ? value("perturbation_agent") : NA,
+    perturbation_target: applies && !checked("perturbation_target_na")
+      ? value("perturbation_target") : NA,
     perturbation_dose: applies && !checked("perturbation_dose_na")
       ? value("perturbation_dose") : NA,
+    co_treatment: value("co_treatment"),
+    co_treatment_target: coTreatmentApplies() ? value("co_treatment_target") : NA,
+    facs_purified: value("facs_purified"),
+    facs_gfp_promoter: value("facs_gfp_promoter"),
     timepoint_hours: checked("timepoint_hours_na") ? NA : value("timepoint_hours"),
     library_selection: value("library_selection"),
+    library_strandedness: value("library_strandedness"),
     sequencing_run_date: checked("sequencing_run_date_na") ? NA : value("sequencing_run_date"),
     notes: value("notes")
   };

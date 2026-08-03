@@ -24,11 +24,16 @@ FORM_OUTPUT = {
     "experiment_type": "PE",
     "cell_line": "SNU719",
     "perturbation_type": "transfection",
-    "induced_program": "lytic_reactivation",
-    "perturbation_target": "Zta",
+    "perturbation_agent": "Zta",
+    "perturbation_target": "NA",
     "perturbation_dose": "NA",
+    "co_treatment": "none",
+    "co_treatment_target": "NA",
+    "facs_purified": "yes",
+    "facs_gfp_promoter": "pCMV",
     "timepoint_hours": "24",
     "library_selection": "polyA",
+    "library_strandedness": "stranded",
     "sequencing_run_date": "2026-01-15",
     "notes": "",
 }
@@ -67,7 +72,9 @@ def test_quick_input_supplies_everything_but_the_two_directories(tmp_path):
                         keep_default_na=False)
     assert set(frame["cell_line"]) == {"SNU719"}
     assert set(frame["library_selection"]) == {"polyA"}
-    assert set(frame["induced_program"]) == {"lytic_reactivation"}
+    assert set(frame["co_treatment"]) == {"none"}
+    assert set(frame["facs_gfp_promoter"]) == {"pCMV"}
+    assert set(frame["library_strandedness"]) == {"stranded"}
     assert set(frame["investigator"]) == {"ethan"}
     assert set(frame["library_layout"]) == {"PE"}
     # Derived from the genome build rather than asked for, which is why the form has no field.

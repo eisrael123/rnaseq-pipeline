@@ -27,9 +27,18 @@ def test_vocab_rejects_unknown_value():
 
 def test_vocab_accepts_known_values():
     assert vocab.validate("cell_line", "SNU719") == "SNU719"
-    assert vocab.validate("perturbation_type", "siRNA") == "siRNA"
+    assert vocab.validate("perturbation_type", "chemical") == "chemical"
     assert vocab.validate("library_selection", "ribodepleted") == "ribodepleted"
+    assert vocab.validate("library_strandedness", "stranded") == "stranded"
+    assert vocab.validate("facs_gfp_promoter", "BMRF1p") == "BMRF1p"
     assert vocab.organism_for_build(GENOME_BUILD) == "human"
+
+
+def test_sirna_is_a_co_treatment_not_a_perturbation_type():
+    """It describes a second treatment alongside the first, not how the first was delivered."""
+    assert vocab.validate("co_treatment", "siRNA") == "siRNA"
+    with pytest.raises(vocab.VocabError):
+        vocab.validate("perturbation_type", "siRNA")
 
 
 def build_experiment(tmp_path, name="SNU719_Zta-plus-Rta"):
@@ -68,10 +77,13 @@ def run_metadata(experiment, cell_line, library_selection="polyA"):
     return subprocess.run(
         [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
          "--non-interactive", "--cell-line", cell_line,
-         "--perturbation-type", "transfection", "--induced-program", "lytic_reactivation",
-         "--perturbation-target", "Zta",
+         "--perturbation-type", "transfection", "--perturbation-agent", "Zta",
+         "--perturbation-target", "NA",
          "--perturbation-dose", "NA", "--timepoint-hours", "24",
+         "--co-treatment", "none", "--facs-purified", "yes",
+         "--facs-gfp-promoter", "pCMV",
          "--library-selection", library_selection,
+         "--library-strandedness", "stranded",
          "--sequencing-run-date", "2026-01-15"],
         capture_output=True, text=True, env=environment,
     )
@@ -103,39 +115,55 @@ def test_metadata_accepts_known_vocab_and_derives_sample_ids(experiment):
     assert frame["fastq_r1_md5"].str.len().eq(32).all()
 
 
-def test_induced_program_is_experiment_level(experiment):
-    """It describes the design, so it is on control rows too.
-
-    That is the difference from the perturbation_* fields: "every sample from a reactivation
-    experiment" has to be one filter, not a subquery back through experiment_id.
-    """
-    result = run_metadata(experiment, "SNU719")
-    assert result.returncode == 0, result.stderr
-
-    frame = pd.read_csv(experiment["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
-                        keep_default_na=False)
-    assert set(frame["induced_program"]) == {"lytic_reactivation"}
-    # Contrast: the perturbation itself was only applied to the test arm.
-    assert frame.loc[frame["condition"] == "cntl", "perturbation_type"].iloc[0] == "none"
-    assert frame.loc[frame["condition"] == "test", "perturbation_type"].iloc[0] == "transfection"
-
-
-def test_induced_program_rejects_free_text(experiment):
-    """'reactivation' is not a value; the vocabulary is the point of the field."""
+def test_co_treatment_is_recorded_apart_from_the_perturbation(experiment):
+    """Zta+PAA has to stay two facts, or "every PAA experiment" stops being a query."""
     environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
     experiment["results_dir"].mkdir(exist_ok=True)
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
          "--non-interactive", "--cell-line", "SNU719",
-         "--perturbation-type", "transfection", "--induced-program", "reactivation",
-         "--perturbation-target", "Zta", "--perturbation-dose", "NA",
-         "--timepoint-hours", "24", "--library-selection", "polyA",
+         "--perturbation-type", "transfection", "--perturbation-agent", "Zta",
+         "--perturbation-target", "NA", "--perturbation-dose", "NA",
+         "--timepoint-hours", "24", "--co-treatment", "PAA",
+         "--co-treatment-target", "PAA_replication",
+         "--facs-purified", "yes", "--facs-gfp-promoter", "pCMV",
+         "--library-selection", "polyA", "--library-strandedness", "stranded",
          "--sequencing-run-date", "2025-04-10"],
         capture_output=True, text=True, env=environment,
     )
+    assert result.returncode == 0, result.stderr
+
+    frame = pd.read_csv(experiment["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
+                        keep_default_na=False)
+    test_row = frame.loc[frame["condition"] == "test"].iloc[0]
+    assert test_row["perturbation_agent"] == "Zta"
+    assert test_row["co_treatment"] == "PAA"
+    assert test_row["co_treatment_target"] == "PAA_replication"
+    # Neither was applied to the control arm.
+    cntl_row = frame.loc[frame["condition"] == "cntl"].iloc[0]
+    assert cntl_row["co_treatment"] == "none"
+    assert cntl_row["co_treatment_target"] == "NA"
+    # FACS describes the material, so it is on both arms.
+    assert set(frame["facs_purified"]) == {"yes"}
+
+
+def test_co_treatment_target_rejects_free_text(experiment):
+    result = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
+         "--non-interactive", "--cell-line", "SNU719",
+         "--perturbation-type", "transfection", "--perturbation-agent", "Zta",
+         "--perturbation-target", "NA", "--perturbation-dose", "NA",
+         "--timepoint-hours", "24", "--co-treatment", "siRNA",
+         "--co-treatment-target", "CNOT-1",
+         "--facs-purified", "yes", "--facs-gfp-promoter", "pCMV",
+         "--library-selection", "polyA", "--library-strandedness", "stranded",
+         "--sequencing-run-date", "2025-04-10"],
+        capture_output=True, text=True,
+        env=dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline"),
+    )
     assert result.returncode != 0
-    assert "invalid induced_program" in result.stderr
-    assert "lytic_reactivation" in result.stderr
+    assert "invalid co_treatment_target" in result.stderr
+    assert "CNOT1" in result.stderr
 
 
 def test_library_selection_is_recorded_on_every_sample(experiment, tmp_path):
@@ -177,9 +205,11 @@ def test_library_selection_has_no_default(experiment):
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
          "--non-interactive", "--cell-line", "SNU719",
-         "--perturbation-type", "transfection", "--induced-program", "lytic_reactivation",
-         "--perturbation-target", "Zta", "--perturbation-dose", "NA",
-         "--timepoint-hours", "24", "--sequencing-run-date", "2025-04-10"],
+         "--perturbation-type", "transfection", "--perturbation-agent", "Zta",
+         "--perturbation-target", "NA", "--perturbation-dose", "NA",
+         "--timepoint-hours", "24", "--co-treatment", "none", "--facs-purified", "yes",
+         "--facs-gfp-promoter", "pCMV", "--library-strandedness", "stranded",
+         "--sequencing-run-date", "2025-04-10"],
         capture_output=True, text=True, env=environment,
     )
     assert result.returncode != 0
@@ -212,7 +242,9 @@ def test_cell_line_still_defaults_from_the_first_segment(tmp_path):
     result = subprocess.run(
         [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
          "--non-interactive", "--perturbation-type", "none",
-         "--induced-program", "unknown", "--library-selection", "polyA",
+         "--library-selection", "polyA", "--library-strandedness", "unknown",
+         "--co-treatment", "none", "--facs-purified", "no",
+         "--facs-gfp-promoter", "none",
          "--timepoint-hours", "NA", "--sequencing-run-date", "NA"],
         capture_output=True, text=True, env=environment,
     )

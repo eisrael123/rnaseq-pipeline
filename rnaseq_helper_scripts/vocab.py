@@ -6,21 +6,36 @@ what made the legacy archive unqueryable, so every field except ``notes`` is con
 """
 
 CELL_LINES = frozenset({
-    "Mutu", "Akata", "DG75", "HepG2", "Raji", "SNU719", "BCBL1", "HEK293",
+    "Mutu", "Akata", "DG75", "SNU719", "YCCEL1", "BCBL1", "Raji", "P3HR1", "HepG2", "HEK293",
 })
+# How the perturbation was delivered. What was delivered is `perturbation_agent`, and the gene it
+# acts on -- when it has one -- is `perturbation_target`.
 PERTURBATION_TYPES = frozenset({
-    "transfection", "siRNA", "drug", "BCR-crosslink", "none",
+    "transfection", "chemical", "BCR-crosslink", "none",
 })
-# The biological program the perturbation was meant to induce, which is a separate axis from how
-# it was induced: lytic reactivation can be driven by Zta or Rta transfection, TPA/butyrate, or
-# BCR crosslinking. Keeping it separate is what makes "every reactivation experiment" a query.
-# `unknown` is distinct from `none`: one is an unrecorded value, the other is a recorded absence.
-INDUCED_PROGRAMS = frozenset({
-    "lytic_reactivation", "latency", "none", "unknown",
+# A second perturbation applied alongside the first, e.g. Zta transfection under PAA. Recorded
+# separately so "Zta+PAA" stays two queryable facts rather than one opaque string.
+CO_TREATMENTS = frozenset({
+    "none", "PAA", "siRNA", "CRISPR", "unknown",
 })
+# What the co-treatment acts on. `PAA_replication` is the odd one out: PAA blocks viral DNA
+# replication rather than targeting a host gene, so the "target" is the process it blocks.
+CO_TREATMENT_TARGETS = frozenset({
+    "PAA_replication", "CNOT1", "CNOT9", "UPF1", "EXOSC3", "NAT10", "TET1", "BRRF1",
+})
+# Whether the sequenced population was sorted. An unsorted transfection is a mixture of
+# transfected and untransfected cells, so this changes what a expression value means.
+FACS_PURIFIED_VALUES = frozenset({"yes", "no", "unknown"})
+# Which promoter drove the GFP that sorting selected on. pCMV reports transfection; BMRF1p
+# reports that the lytic cycle actually started, which is a different population.
+FACS_GFP_PROMOTERS = frozenset({"pCMV", "BMRF1p", "none", "unknown"})
 ORGANISMS = frozenset({"human", "mouse"})
 CONDITIONS = frozenset({"test", "cntl"})
 LIBRARY_LAYOUTS = frozenset({"PE", "SE"})
+# What was intended at library prep, which is not the same as the `strandedness` column: that one
+# is measured per sample by RSeQC after alignment. The two normally agree, and a disagreement is
+# a useful flag for a mislabelled sample or the wrong kit, which is why both are kept.
+LIBRARY_STRANDEDNESS_VALUES = frozenset({"stranded", "unstranded", "unknown"})
 # How RNA was selected before library construction. polyA selection and rRNA depletion see
 # different transcriptomes -- non-polyadenylated and unprocessed RNA is present in one and
 # absent by construction in the other -- so this is not a comparable axis: a gene that looks
@@ -49,11 +64,15 @@ STRAND_CONTROL_GENES = {
 VOCABULARIES = {
     "cell_line": CELL_LINES,
     "perturbation_type": PERTURBATION_TYPES,
-    "induced_program": INDUCED_PROGRAMS,
+    "co_treatment": CO_TREATMENTS,
+    "co_treatment_target": CO_TREATMENT_TARGETS,
+    "facs_purified": FACS_PURIFIED_VALUES,
+    "facs_gfp_promoter": FACS_GFP_PROMOTERS,
     "organism": ORGANISMS,
     "condition": CONDITIONS,
     "library_layout": LIBRARY_LAYOUTS,
     "library_selection": LIBRARY_SELECTIONS,
+    "library_strandedness": LIBRARY_STRANDEDNESS_VALUES,
 }
 
 

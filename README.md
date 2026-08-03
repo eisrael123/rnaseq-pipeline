@@ -165,19 +165,36 @@ years later. The form asks for all of these; without it, `metadata.py` prompts f
 them as flags to skip the prompts, and add `--non-interactive` to make a missing value an error
 instead:
 
-- `--cell-line`, `--organism`, `--perturbation-type`, `--induced-program`,
-  `--library-selection`: controlled vocabularies. An unrecognized value is rejected with the
+- `--cell-line`, `--organism`, `--perturbation-type`, `--co-treatment`,
+  `--co-treatment-target`, `--facs-purified`, `--facs-gfp-promoter`, `--library-selection`,
+  `--library-strandedness`: controlled vocabularies. An unrecognized value is rejected with the
   list of allowed values. To add one, edit `rnaseq_helper_scripts/vocab.py`.
-- `--perturbation-target` (e.g. `BMRF1`), `--perturbation-dose` (e.g. `100nM`),
-  `--timepoint-hours`, `--sequencing-run-date`, `--notes`.
+- `--perturbation-agent` (e.g. `Zta`, `Zta+Rta`, `anti-IgG`), `--perturbation-target` (e.g.
+  `BMRF1`, or `NA`), `--perturbation-dose` (e.g. `5ug+5ug`, `100nM`), `--timepoint-hours`,
+  `--sequencing-run-date`, `--notes`: free text.
 
-`--perturbation-type` is *how* the perturbation was delivered; `--induced-program` is *what it
-was meant to induce*. They are separate axes because lytic reactivation can be driven by Zta or
-Rta transfection, by TPA/butyrate, or by BCR crosslinking — keeping them apart is what makes
-"every reactivation experiment, regardless of method" a single query. Unlike the
-`--perturbation-*` fields, `--induced-program` describes the experiment and so is recorded on
-control samples too. Use `unknown` for an unrecoverable value and `none` for a recorded absence;
-they are not the same thing.
+The perturbation is recorded as three separate axes, because collapsing them is what makes an
+archive unqueryable. `--perturbation-type` is *how* it was delivered (`transfection`,
+`chemical`, `BCR-crosslink`, `none`); `--perturbation-agent` is *what* was delivered (`Zta`,
+`anti-IgG`, `CC115`); `--perturbation-target` is the gene the agent acts on, which is `NA` when
+it has none — Zta or Rta overexpression has no separate molecular target, but an siRNA does.
+
+`--co-treatment` is a second treatment applied alongside the first, with
+`--co-treatment-target` naming what it acts on. Zta under PAA is a Zta perturbation with a `PAA`
+co-treatment, not a single combined value, so "every PAA experiment" stays one filter. Use
+`PAA_replication` as the target where the co-treatment blocks viral DNA replication rather than
+acting on a host gene.
+
+`--facs-purified` and `--facs-gfp-promoter` describe the sequenced material, so they are
+recorded on control rows too. An unsorted transfection is a mixture of transfected and
+untransfected cells, which changes what an expression value means; and sorting on `pCMV`-driven
+GFP selects cells that were transfected, while `BMRF1p` selects cells where the lytic cycle
+actually started. Those are different populations.
+
+`--library-strandedness` is what was ordered at library prep. It is deliberately *not* the same
+field as the `strandedness` column in `metadata.tsv`, which RSeQC measures per sample after
+alignment. The two normally agree, and a disagreement is a useful flag for a mislabeled sample
+or the wrong kit, which is why both are kept.
 
 `--library-selection` is `polyA` or `ribodepleted` (or `unknown` when backfilling older runs),
 and it has no default on purpose. It is not a comparable axis: non-polyadenylated and

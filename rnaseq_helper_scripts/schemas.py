@@ -414,15 +414,31 @@ METADATA = Table(
         _c("organism", "enum", ("human", "mouse")),
         _c("genome_build", "str", notes="Must match a directory under reference_dir."),
         _c("perturbation_type", "enum",
-           ("transfection", "siRNA", "drug", "BCR-crosslink", "none"),
+           ("transfection", "chemical", "BCR-crosslink", "none"),
            notes="How the perturbation was delivered."),
-        _c("induced_program", "enum",
-           ("lytic_reactivation", "latency", "none", "unknown"),
-           notes="The biological program the perturbation was meant to induce, independent of "
-                 "how. `unknown` is a missing record; `none` is a recorded absence. Describes "
-                 "the experiment, so unlike `perturbation_*` it is set on control rows too."),
-        _c("perturbation_target", "str", notes="`NA` for controls."),
+        _c("perturbation_agent", "str",
+           notes="What was delivered, e.g. `Zta`, `Rta`, `Zta+Rta`, `anti-IgG`, `CC115`. "
+                 "`NA` for controls."),
+        _c("perturbation_target", "str",
+           notes="The gene the agent acts on, when it has one, e.g. `BMRF1`, `SRSF1`. `NA` when "
+                 "the agent has no separate molecular target (Zta/Rta overexpression) and for "
+                 "controls."),
         _c("perturbation_dose", "str", notes="`NA` if not applicable."),
+        _c("co_treatment", "enum", ("none", "PAA", "siRNA", "CRISPR", "unknown"),
+           notes="A second perturbation applied alongside the first, e.g. Zta under PAA. Kept "
+                 "apart from `perturbation_*` so a combination stays two queryable facts."),
+        _c("co_treatment_target", "str",
+           notes="What the co-treatment acts on, e.g. `CNOT1`, `UPF1`. `PAA_replication` where "
+                 "the co-treatment blocks viral DNA replication rather than a host gene. `NA` "
+                 "when there is no co-treatment."),
+        _c("facs_purified", "enum", ("yes", "no", "unknown"),
+           notes="Whether the sequenced population was sorted. An unsorted transfection mixes "
+                 "transfected and untransfected cells, which changes what an expression value "
+                 "means."),
+        _c("facs_gfp_promoter", "enum", ("pCMV", "BMRF1p", "none", "unknown"),
+           notes="Which promoter drove the GFP that sorting selected on. `pCMV` reports "
+                 "transfection; `BMRF1p` reports that the lytic cycle actually started, which "
+                 "is a different population."),
         _c("timepoint_hours", "float", notes="`NA` if not applicable."),
         _c("library_layout", "enum", ("PE", "SE")),
         _c("library_selection", "enum", ("polyA", "ribodepleted", "unknown"),
@@ -431,7 +447,13 @@ METADATA = Table(
                  "libraries by construction, so expression must not be compared across "
                  "differing values without saying so. `unknown` is an unrecorded value, used "
                  "for backfilled legacy runs."),
-        _c("strandedness", "str", notes="Filled in by the RSeQC step; `NA` until then."),
+        _c("library_strandedness", "enum", ("stranded", "unstranded", "unknown"),
+           notes="What was intended at library prep, entered up front. Distinct from the "
+                 "measured `strandedness` below; a disagreement between the two flags a "
+                 "mislabelled sample or the wrong kit."),
+        _c("strandedness", "str",
+           notes="Measured per sample by RSeQC after alignment. Filled in by the RSeQC step; "
+                 "`NA` until then."),
         _c("fastq_r1", "str", notes="Absolute path, as mounted."),
         _c("fastq_r2", "str", notes="`NA` for SE."),
         _c("fastq_r1_md5", "str"),

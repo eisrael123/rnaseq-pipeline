@@ -377,14 +377,19 @@ One row per FASTQ sample. Produced by metadata.py and copied into results_dir.
 | `cell_line` | str | Controlled vocabulary, see vocab.py. |
 | `organism` | enum: `human` \| `mouse` |  |
 | `genome_build` | str | Must match a directory under reference_dir. |
-| `perturbation_type` | enum: `transfection` \| `siRNA` \| `drug` \| `BCR-crosslink` \| `none` | How the perturbation was delivered. |
-| `induced_program` | enum: `lytic_reactivation` \| `latency` \| `none` \| `unknown` | The biological program the perturbation was meant to induce, independent of how. `unknown` is a missing record; `none` is a recorded absence. Describes the experiment, so unlike `perturbation_*` it is set on control rows too. |
-| `perturbation_target` | str | `NA` for controls. |
+| `perturbation_type` | enum: `transfection` \| `chemical` \| `BCR-crosslink` \| `none` | How the perturbation was delivered. |
+| `perturbation_agent` | str | What was delivered, e.g. `Zta`, `Rta`, `Zta+Rta`, `anti-IgG`, `CC115`. `NA` for controls. |
+| `perturbation_target` | str | The gene the agent acts on, when it has one, e.g. `BMRF1`, `SRSF1`. `NA` when the agent has no separate molecular target (Zta/Rta overexpression) and for controls. |
 | `perturbation_dose` | str | `NA` if not applicable. |
+| `co_treatment` | enum: `none` \| `PAA` \| `siRNA` \| `CRISPR` \| `unknown` | A second perturbation applied alongside the first, e.g. Zta under PAA. Kept apart from `perturbation_*` so a combination stays two queryable facts. |
+| `co_treatment_target` | str | What the co-treatment acts on, e.g. `CNOT1`, `UPF1`. `PAA_replication` where the co-treatment blocks viral DNA replication rather than a host gene. `NA` when there is no co-treatment. |
+| `facs_purified` | enum: `yes` \| `no` \| `unknown` | Whether the sequenced population was sorted. An unsorted transfection mixes transfected and untransfected cells, which changes what an expression value means. |
+| `facs_gfp_promoter` | enum: `pCMV` \| `BMRF1p` \| `none` \| `unknown` | Which promoter drove the GFP that sorting selected on. `pCMV` reports transfection; `BMRF1p` reports that the lytic cycle actually started, which is a different population. |
 | `timepoint_hours` | float | `NA` if not applicable. |
 | `library_layout` | enum: `PE` \| `SE` |  |
 | `library_selection` | enum: `polyA` \| `ribodepleted` \| `unknown` | RNA selection before library construction. Not a comparable axis: non-polyadenylated and unprocessed transcripts are absent from `polyA` libraries by construction, so expression must not be compared across differing values without saying so. `unknown` is an unrecorded value, used for backfilled legacy runs. |
-| `strandedness` | str | Filled in by the RSeQC step; `NA` until then. |
+| `library_strandedness` | enum: `stranded` \| `unstranded` \| `unknown` | What was intended at library prep, entered up front. Distinct from the measured `strandedness` below; a disagreement between the two flags a mislabelled sample or the wrong kit. |
+| `strandedness` | str | Measured per sample by RSeQC after alignment. Filled in by the RSeQC step; `NA` until then. |
 | `fastq_r1` | str | Absolute path, as mounted. |
 | `fastq_r2` | str | `NA` for SE. |
 | `fastq_r1_md5` | str |  |
