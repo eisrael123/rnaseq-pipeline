@@ -4,6 +4,7 @@
 - [General Information](#general-information)
 - [Getting Started](#getting-started)
 - [Running the Pipeline on Docker](#running-the-pipeline-on-docker)
+  - [Filling in the parameters with the form](#filling-in-the-parameters-with-the-form)
 - [Outputs](#outputs)
 - [Validating a run](#validating-a-run)
 - [Development](#development)
@@ -133,16 +134,36 @@ This pipeline is **computationally and memory intensive**. Do **not** run multip
 
 ### Pipeline Arguments 
 #### For metadata.py: 
-- `<fastq_root_dir>`: Filepath of Fastq Directory (the one that contains `cntl_*` and `test_*` subdirectories) 
-- `<reference_dir>`: Filepath of `referenceFiles`. 
-- `<species_name>`: e.g. hg38, mm39, etc. It must match an existing directory under `referenceFiles`.
-- `<investigator_name>`: Name of investigator, should not contain spaces.
-- `<PE | SE>`: use `PE` for paired-end data or `SE` for single-end data.
-- `<results_dir>`: Filepath of where you want the output to exist. The folder must be empty.
+
+Every argument is a named flag; there are no positional arguments. There are two ways to supply
+them, and they can be mixed:
+
+| | What you type | Where the rest comes from |
+|---|---|---|
+| **With the form** (normal) | Two directories, plus `--quick-input` | `input_args.json` in the FASTQ folder |
+| **By hand** | Every flag, or answer the prompts | You |
+
+Two flags are always required, because they name where the data sits on *this* machine and
+nothing else can know that:
+
+- `--root-fastq-dir`: Filepath of the FASTQ directory (the one that contains the `cntl` and
+  `test` subdirectories).
+- `--output-dir`: Filepath of where you want the output to exist. The folder must be empty.
+
+The rest can come from a flag, from an interactive prompt, or from
+[the form](#filling-in-the-parameters-with-the-form) via `--quick-input`:
+
+- `--reference-dir`: Filepath of `referenceFiles`.
+- `--species-name`: e.g. hg38, mm39, etc. It must match an existing directory under
+  `referenceFiles`.
+- `--investigator-name`: Name of investigator. Whitespace is stripped, since the name becomes
+  part of the output filename.
+- `--experiment-type`: `PE` for paired-end data or `SE` for single-end data.
 
 `metadata.py` also records what the experiment actually was, so results stay interpretable
-years later. It prompts for each of these; pass them as flags to skip the prompts, and add
-`--non-interactive` to make a missing value an error instead:
+years later. The form asks for all of these; without it, `metadata.py` prompts for each. Pass
+them as flags to skip the prompts, and add `--non-interactive` to make a missing value an error
+instead:
 
 - `--cell-line`, `--organism`, `--perturbation-type`, `--induced-program`,
   `--library-selection`: controlled vocabularies. An unrecognized value is rejected with the
@@ -166,6 +187,53 @@ the biology. Recording it per sample is what lets a cross-experiment query eithe
 selection method or state that it is mixing them; defaulting it would make the archive quietly
 claim otherwise. It sits alongside `library_layout` (`PE`/`SE`) and the RSeQC-inferred
 `strandedness` in `metadata.tsv`.
+
+### Filling in the parameters with the form
+
+Typing a dozen flags correctly is not the job of whoever ran the experiment. `metadata_form.html`
+is a single self-contained page — open it by double-clicking, no server and no install — that
+asks for each value with a dropdown, then downloads the answers as `input_args.json`.
+
+1. Open `metadata_form.html` in a browser and fill in every field. The download button stays
+   disabled until nothing is missing, and it lists what is still outstanding.
+2. Drag the downloaded `input_args.json` into the experiment's FASTQ folder, alongside the
+   `cntl` and `test` subdirectories. **Keep the filename exactly as downloaded** — that fixed
+   name is how the pipeline finds it.
+   ```text
+    SNU719_Zta-plus-Rta/
+    ├── input_args.json
+    ├── cntl 
+      └── ...
+    └── test
+      └── ...
+    ```
+3. Then, pass `--quick-input`, and the two directory arguments:
+
+```bash
+python metadata.py \
+  --root-fastq-dir /data/SNU719_Zta-plus-Rta \
+  --output-dir /data/output \
+  --quick-input
+```
+
+The file sits next to the condition folders rather than inside them, so it does not disturb
+sample discovery — `metadata.py` walks directories and ignores loose files.
+
+Notes on how it behaves:
+
+- **`--quick-input` is opt-in.** Without the flag the file is never read, even if it is sitting
+  right there. Nothing about the existing flag-driven or interactive workflows changes.
+- **An explicit flag still wins.** `--quick-input --library-selection ribodepleted` overrides
+  what the file says, so a one-off rerun does not need the file edited and re-downloaded.
+- **Values that came from the form are not re-checked against `vocab.py`.** The dropdown is
+  what constrains them, and a second copy of the allowed values in `metadata.py` could only
+  drift from the first. The consequence is worth knowing: a **hand-edited** `input_args.json`
+  can put a value into the archive that the vocabulary would have rejected. Re-download from
+  the form rather than editing the JSON.
+- **The form's dropdowns are a hand-maintained copy of `rnaseq_helper_scripts/vocab.py`.** They
+  agree today. If you add a cell line, genome build, or any other vocabulary value to
+  `vocab.py`, add the matching `<option>` to `metadata_form.html` in the same commit, or the
+  form will silently be unable to offer a value the pipeline supports.
 
 #### For rnaseq.py: 
 - `<metadata_file>`: The file path of generated metadata tsv file `output_dir/*.tsv`.
@@ -206,10 +274,10 @@ When you use `-v` to mount folders, Docker maps folders from your computer to ne
 
 Use the **container paths** (right side of every colon in each `-v` line) when calling `metadata.py` and `rnaseq.py` inside the container.
 
-- `fastq_root_dir`: `/data/<your experiment directory name>`
-- `reference_dir`: `/data/referenceFiles`
-- `results_dir`: `/data/output`
-- `scripts_dir`: `/work/rnaseq_helper_scripts`
+- `--root-fastq-dir`: `/data/<your experiment directory name>`
+- `--reference-dir`: `/data/referenceFiles`
+- `--output-dir`: `/data/output`
+- `scripts_dir` (rnaseq.py): `/work/rnaseq_helper_scripts`
 
 Quick mapping examples from the command above:
 - `/path/on/your/computer/to/SNU719_Rta-Zta-2025-04-10` -> `/data/SNU719_Rta-Zta-2025-04-10`
@@ -224,13 +292,26 @@ Quick mapping examples from the command above:
    ```  
 
 #### 2. Generate metadata:
+
+   If the experiment folder has an `input_args.json` from
+   [the form](#filling-in-the-parameters-with-the-form):
    ```bash
-   metadata.py <fastq_root_dir> <reference_dir> <species_name> <investigator_name> <PE|SE> <results_dir>
-   ``` 
-   
-   Example:
+   python metadata.py \
+     --root-fastq-dir /data/SNU719_Zta-plus-Rta \
+     --output-dir /data/output \
+     --quick-input
+   ```
+
+   Otherwise pass the run arguments yourself, and answer the experiment prompts (or pass those
+   as flags too — see [Pipeline Arguments](#for-metadatapy)):
    ```bash
-   python metadata.py /data/SNU719_Zta-plus-Rta /data/referenceFiles hg38plusAkataInverted ethan PE /data/output
+   python metadata.py \
+     --root-fastq-dir /data/SNU719_Zta-plus-Rta \
+     --output-dir /data/output \
+     --reference-dir /data/referenceFiles \
+     --species-name hg38plusAkataInverted \
+     --investigator-name ethan \
+     --experiment-type PE
    ```
 
 #### 3. Run the pipeline
@@ -244,24 +325,39 @@ Quick mapping examples from the command above:
  
 
 ### 2) One-shot Docker command (non-interactive)
+
+This is the normal way to run the pipeline. It builds the metadata and runs the analysis in a
+single container, start to finish.
+
+**Prerequisite:** the experiment's FASTQ folder must already contain an `input_args.json` from
+[the form](#filling-in-the-parameters-with-the-form). The script reads every experiment detail
+from it and exits immediately, before starting Docker, if it is not there.
+
+Edit exactly two variables at the top of `run_pipeline_one_shot.sh`:
+
+- `HOST_FASTQ_ROOT_DIR` — the experiment folder (holds `cntl/`, `test/`, and `input_args.json`)
+- `HOST_OUTPUT_DIR` — where the output goes; must be empty
+
+Then run it:
+
 ```bash
 ./run_pipeline_one_shot.sh
 ```
 
-Edit variables at the top of `run_pipeline_one_shot.sh` before running:
-- `HOST_REFERENCE_DIR`
-- `HOST_FASTQ_ROOT_DIR`
-- `HOST_OUTPUT_DIR`
-- `SPECIES_NAME`
-- `INVESTIGATOR_NAME`
-- `EXPERIMENT_TYPE` (`PE` or `SE`)
-- `CELL_LINE`, `PERTURBATION_TYPE`, `PERTURBATION_TARGET`, `PERTURBATION_DOSE`,
-  `LIBRARY_SELECTION`, `TIMEPOINT_HOURS`, `SEQUENCING_RUN_DATE` — the script runs
-  `metadata.py --non-interactive`, so all of these must be filled in.
+Nothing else in the script needs touching. `HOST_REFERENCE_DIR` is already set to the Mac15
+location of `referenceFiles` and only changes on a machine where it lives somewhere else; the
+container paths below it are wired to the mounts.
+
+The species, investigator, layout, cell line, perturbation and library fields that used to be
+variables in this script are gone — they live in `input_args.json` now, and the script passes
+`--quick-input`. To override one for a single run without re-downloading the file, add the flag
+to the `metadata.py` call inside the script; an explicit flag beats the file.
 
 ### Checklist
 - Parent folder naming follows `Model_Experiment` (single underscore).
 - Subdirectories are exactly `cntl` and `test`.
+- If using the form: `input_args.json` sits at the top level of the FASTQ folder, next to
+  `cntl`/`test`, under exactly that name.
 - Reference name exists in `referenceFiles`.
 - Environment is `rnaseqpipeline` (native or container).
 - Metadata and rnaseq are run with matching paths in the selected environment.

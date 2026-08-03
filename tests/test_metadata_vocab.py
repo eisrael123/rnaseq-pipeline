@@ -52,13 +52,21 @@ def experiment(tmp_path):
     return build_experiment(tmp_path)
 
 
+def run_args(experiment):
+    """The four run flags that used to be positional arguments."""
+    return ["--root-fastq-dir", str(experiment["fastq_root"]),
+            "--output-dir", str(experiment["results_dir"]),
+            "--reference-dir", str(experiment["reference_dir"]),
+            "--species-name", GENOME_BUILD,
+            "--investigator-name", "ethan",
+            "--experiment-type", "PE"]
+
+
 def run_metadata(experiment, cell_line, library_selection="polyA"):
     (experiment["results_dir"]).mkdir(exist_ok=True)
     environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
     return subprocess.run(
-        [sys.executable, str(REPO_ROOT / "metadata.py"),
-         str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
-         "ethan", "PE", str(experiment["results_dir"]),
+        [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
          "--non-interactive", "--cell-line", cell_line,
          "--perturbation-type", "transfection", "--induced-program", "lytic_reactivation",
          "--perturbation-target", "Zta",
@@ -117,9 +125,7 @@ def test_induced_program_rejects_free_text(experiment):
     environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
     experiment["results_dir"].mkdir(exist_ok=True)
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "metadata.py"),
-         str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
-         "ethan", "PE", str(experiment["results_dir"]),
+        [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
          "--non-interactive", "--cell-line", "SNU719",
          "--perturbation-type", "transfection", "--induced-program", "reactivation",
          "--perturbation-target", "Zta", "--perturbation-dose", "NA",
@@ -169,9 +175,7 @@ def test_library_selection_has_no_default(experiment):
     environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
     experiment["results_dir"].mkdir(exist_ok=True)
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "metadata.py"),
-         str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
-         "ethan", "PE", str(experiment["results_dir"]),
+        [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
          "--non-interactive", "--cell-line", "SNU719",
          "--perturbation-type", "transfection", "--induced-program", "lytic_reactivation",
          "--perturbation-target", "Zta", "--perturbation-dose", "NA",
@@ -206,9 +210,7 @@ def test_cell_line_still_defaults_from_the_first_segment(tmp_path):
     environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
     experiment["results_dir"].mkdir(exist_ok=True)
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "metadata.py"),
-         str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
-         "ethan", "PE", str(experiment["results_dir"]),
+        [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
          "--non-interactive", "--perturbation-type", "none",
          "--induced-program", "unknown", "--library-selection", "polyA",
          "--timepoint-hours", "NA", "--sequencing-run-date", "NA"],
@@ -253,9 +255,8 @@ def test_metadata_requires_a_terminal_or_a_flag(experiment):
     """
     environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
     result = subprocess.run(
-        [sys.executable, str(REPO_ROOT / "metadata.py"),
-         str(experiment["fastq_root"]), str(experiment["reference_dir"]), GENOME_BUILD,
-         "ethan", "PE", str(experiment["results_dir"]), "--non-interactive"],
+        [sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
+         "--non-interactive"],
         capture_output=True, text=True, env=environment,
     )
     assert result.returncode != 0

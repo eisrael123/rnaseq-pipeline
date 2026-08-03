@@ -1,14 +1,17 @@
 #!/usr/bin/env python3
 # metadata.py
 #
-# Usage: metadata.py <fastq_root_dir> <reference_dir> <species_name> <investigator_name>
-#                    <PE|SE> <results_dir> [experiment options]
+# Usage: metadata.py --root-fastq-dir DIR --output-dir DIR [--quick-input | run/experiment flags]
+#
+# Every argument is a named flag. --quick-input reads the remaining ones from the input_args.json
+# that metadata_form.html downloads, so the two directories are all that has to be typed.
 #
 # Emits <results_dir>/<investigator>_metadata_<timestamp>.tsv (the file to hand to rnaseq.py)
 # and <results_dir>/metadata.tsv (the warehouse copy, identical content).
 
 import argparse
 import hashlib
+import json
 import logging
 import os
 import re
@@ -60,6 +63,17 @@ SINGLE_PATTERNS = [
 # Names that mean somebody pasted an example instead of substituting their own path. Cheap to
 # check, and the failure it prevents is silent and permanent.
 PLACEHOLDER_NAMES = frozenset({"Model_Experiment", "model_experiment", "CellLine_Experiment"})
+
+# Written by metadata_form.html and dropped at the top level of the FASTQ directory, next to the
+# test/ and cntl/ subdirectories. The name is fixed because that is the whole interface: the form
+# names the download, --quick-input looks for it, and nobody has to type or agree on a path.
+QUICK_INPUT_FILENAME = "input_args.json"
+QUICK_INPUT_FIELDS = frozenset({
+    "reference_dir", "species_name", "investigator_name", "experiment_type",
+    "cell_line", "perturbation_type", "induced_program", "library_selection",
+    "perturbation_target", "perturbation_dose", "timepoint_hours",
+    "sequencing_run_date", "notes",
+})
 
 
 def fail(message: str) -> None:
@@ -150,20 +164,57 @@ def parse_fastq_files(fastq_root_dir: Path, layout: str) -> list[dict]:
     return records
 
 
+def load_quick_input(fastq_root_dir: Path) -> dict[str, str]:
+    """Read the form's ``input_args.json`` from the top level of the FASTQ directory."""
+    path = fastq_root_dir / QUICK_INPUT_FILENAME
+    if not path.is_file():
+        fail(
+            f"--quick-input was passed but no {QUICK_INPUT_FILENAME} was found at the top level "
+            f"of {fastq_root_dir}.\n"
+            f"Fill out metadata_form.html, then drag the file it downloads into that directory, "
+            f"alongside the test/ and cntl/ subdirectories.\n"
+            f"To supply the values on the command line instead, drop --quick-input and pass the "
+            f"run and experiment flags (see --help)."
+        )
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as error:
+        fail(f"{path} is not valid JSON ({error}). Download a fresh copy from "
+             f"metadata_form.html rather than editing it by hand.")
+    if not isinstance(data, dict):
+        fail(f"{path} must hold a JSON object, got {type(data).__name__}.")
+    # A misspelled key would otherwise read as "not supplied" and send the run to a prompt that
+    # nothing is watching, or to a missing-value error naming a field the file appears to set.
+    unknown = sorted(set(data) - QUICK_INPUT_FIELDS)
+    if unknown:
+        fail(f"{path} has unrecognized field(s): {', '.join(unknown)}.\n"
+             f"recognized fields: {', '.join(sorted(QUICK_INPUT_FIELDS))}")
+    return {key: str(value).strip() for key, value in data.items() if value is not None}
+
+
 def resolve(field: str, value: str | None, *, prompt: str, allowed=None,
-            interactive: bool, flag: str, default: str | None = None) -> str:
+            interactive: bool, flag: str, default: str | None = None,
+            from_form: str | None = None) -> str:
     """Return a validated value for ``field``, prompting only when a terminal is attached.
 
     Nothing here depends on being interactive: every field can be supplied by flag, which is
     how run_pipeline_one_shot.sh drives it.
+
+    ``from_form`` is the value read from ``input_args.json``. It is used only when no flag was
+    passed, and it is deliberately not re-checked against the vocabulary: the form's <select>
+    is what constrains it, and a second copy of the allowed values here could only drift from
+    the first. An explicit flag still wins, so a one-off run can override the file without
+    editing it.
     """
+    if value is None and from_form is not None:
+        return from_form
     if value is None and default is not None:
         value = default
     while value is None:
         if not interactive:
             fail(
                 f"{field} was not supplied and there is no terminal to prompt on. "
-                f"Pass {flag}."
+                f"Pass {flag}, or --quick-input to read it from {QUICK_INPUT_FILENAME}."
                 + (f"\nallowed values: {', '.join(sorted(allowed))}" if allowed else "")
             )
         entered = input(f"{prompt}: ").strip()
@@ -182,12 +233,27 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         description="Generate the metadata TSV that drives rnaseq.py.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("fastq_root_dir", help="directory containing the test/ and cntl/ subdirectories")
-    parser.add_argument("reference_dir", help="path to referenceFiles")
-    parser.add_argument("species_name", help="genome build; must match a directory under reference_dir")
-    parser.add_argument("investigator_name")
-    parser.add_argument("experiment_type", choices=["PE", "SE", "pe", "se"], help="PE or SE")
-    parser.add_argument("results_dir", help="output directory")
+    # The two directories nobody else can know: they name the local copy of the data and where
+    # its output goes, so they stay on the command line and out of the form.
+    parser.add_argument("--root-fastq-dir", dest="fastq_root_dir", required=True,
+                        help="directory containing the test/ and cntl/ subdirectories")
+    parser.add_argument("--output-dir", dest="results_dir", required=True,
+                        help="output directory")
+    parser.add_argument("--quick-input", action="store_true",
+                        help=f"read the remaining values from {QUICK_INPUT_FILENAME} at the top "
+                             f"level of --root-fastq-dir, as written by metadata_form.html. "
+                             f"Without this flag the file is never consulted; with it, an "
+                             f"explicit flag still overrides what the file says.")
+
+    run = parser.add_argument_group("run (from --quick-input, a flag, or a prompt)")
+    run.add_argument("--reference-dir", dest="reference_dir", help="path to referenceFiles")
+    run.add_argument("--species-name", dest="species_name",
+                     help="genome build; must match a directory under --reference-dir")
+    run.add_argument("--investigator-name", dest="investigator_name",
+                     help="investigator name; whitespace is stripped, since it becomes part of "
+                          "the output filename")
+    run.add_argument("--experiment-type", dest="experiment_type",
+                     choices=["PE", "SE", "pe", "se"], help="PE or SE")
 
     experiment = parser.add_argument_group("experiment structure (prompted if omitted)")
     experiment.add_argument("--cell-line", help=f"one of: {', '.join(sorted(vocab.CELL_LINES))}")
@@ -204,7 +270,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     experiment.add_argument("--perturbation-dose", help="e.g. 100nM")
     experiment.add_argument("--timepoint-hours", help="hours post perturbation, or NA")
     experiment.add_argument("--sequencing-run-date", help="ISO 8601 date, or NA")
-    experiment.add_argument("--notes", default="", help="free text")
+    experiment.add_argument("--notes", help="free text")
     experiment.add_argument("--non-interactive", action="store_true",
                             help="never prompt; missing values are an error")
     return parser.parse_args(argv)
@@ -214,14 +280,32 @@ def main(argv: list[str]) -> None:
     args = parse_args(argv)
 
     fastq_root_dir = Path(args.fastq_root_dir).resolve()
-    reference_dir = Path(args.reference_dir).resolve()
-    genome_build = args.species_name
-    investigator = args.investigator_name
-    library_layout = args.experiment_type.upper()
     results_dir = Path(args.results_dir).resolve()
 
     if not fastq_root_dir.is_dir():
         fail(f"FASTQ directory not found: {fastq_root_dir}")
+
+    form = load_quick_input(fastq_root_dir) if args.quick_input else {}
+
+    def run_arg(field: str, flag: str) -> str:
+        value = getattr(args, field) or form.get(field)
+        if not value:
+            fail(f"{field} was not supplied. Pass {flag}, or --quick-input to read it from "
+                 f"{QUICK_INPUT_FILENAME} at the top level of {fastq_root_dir}.")
+        return value
+
+    reference_dir = Path(run_arg("reference_dir", "--reference-dir")).resolve()
+    genome_build = run_arg("species_name", "--species-name")
+    # Whitespace would produce an output filename that the pipeline's own
+    # <investigator>_metadata_*.tsv glob no longer matches.
+    investigator = re.sub(r"\s+", "", run_arg("investigator_name", "--investigator-name"))
+    if not investigator:
+        fail("investigator_name is blank once whitespace is stripped.")
+    library_layout = run_arg("experiment_type", "--experiment-type").upper()
+    # Not vocabulary policing: this picks which FASTQ pairing branch runs, so an unrecognized
+    # value would quietly parse a paired-end run as single-end.
+    if library_layout not in vocab.LIBRARY_LAYOUTS:
+        fail(f"experiment_type must be PE or SE, got {library_layout!r}.")
     # Only the first underscore is structural: it separates the cell model from the experiment
     # descriptor. Everything after it is free, so a uniquifying suffix can use either separator.
     model, _, descriptor = fastq_root_dir.name.partition('_')
@@ -260,6 +344,7 @@ def main(argv: list[str]) -> None:
         allowed=vocab.CELL_LINES, interactive=interactive, flag="--cell-line",
         # The Model half of Model_Experiment is the cell line by convention.
         default=model if model in vocab.CELL_LINES else None,
+        from_form=form.get("cell_line"),
     )
     organism = resolve(
         "organism", args.organism, prompt=f"Organism for {genome_build}",
@@ -270,11 +355,13 @@ def main(argv: list[str]) -> None:
         "perturbation_type", args.perturbation_type,
         prompt=f"Perturbation type ({'/'.join(sorted(vocab.PERTURBATION_TYPES))})",
         allowed=vocab.PERTURBATION_TYPES, interactive=interactive, flag="--perturbation-type",
+        from_form=form.get("perturbation_type"),
     )
     induced_program = resolve(
         "induced_program", args.induced_program,
         prompt=f"Induced program ({'/'.join(sorted(vocab.INDUCED_PROGRAMS))})",
         allowed=vocab.INDUCED_PROGRAMS, interactive=interactive, flag="--induced-program",
+        from_form=form.get("induced_program"),
     )
     if perturbation_type == "none":
         perturbation_target = NA
@@ -283,17 +370,21 @@ def main(argv: list[str]) -> None:
         perturbation_target = resolve(
             "perturbation_target", args.perturbation_target,
             prompt="Perturbation target (e.g. BMRF1)", interactive=interactive,
-            flag="--perturbation-target",
+            flag="--perturbation-target", from_form=form.get("perturbation_target"),
         )
         perturbation_dose = resolve(
             "perturbation_dose", args.perturbation_dose,
             prompt="Perturbation dose (e.g. 100nM, or NA)", interactive=interactive,
-            flag="--perturbation-dose",
+            flag="--perturbation-dose", from_form=form.get("perturbation_dose"),
         )
     timepoint_hours = resolve(
         "timepoint_hours", args.timepoint_hours, prompt="Timepoint in hours (or NA)",
         interactive=interactive, flag="--timepoint-hours",
+        from_form=form.get("timepoint_hours"),
     )
+    # Canonicalisation rather than a second verifier: the column has to read the same whether a
+    # value arrived as "24" from the form or "24.0" from a flag, or a query grouping on it splits
+    # one timepoint in two.
     if timepoint_hours != NA:
         try:
             timepoint_hours = str(float(timepoint_hours))
@@ -306,11 +397,12 @@ def main(argv: list[str]) -> None:
         "library_selection", args.library_selection,
         prompt=f"Library selection ({'/'.join(sorted(vocab.LIBRARY_SELECTIONS))})",
         allowed=vocab.LIBRARY_SELECTIONS, interactive=interactive, flag="--library-selection",
+        from_form=form.get("library_selection"),
     )
     sequencing_run_date = resolve(
         "sequencing_run_date", args.sequencing_run_date,
         prompt="Sequencing run date (YYYY-MM-DD, or NA)", interactive=interactive,
-        flag="--sequencing-run-date",
+        flag="--sequencing-run-date", from_form=form.get("sequencing_run_date"),
     )
     if sequencing_run_date != NA:
         try:
@@ -318,6 +410,9 @@ def main(argv: list[str]) -> None:
         except ValueError:
             fail(f"sequencing_run_date must be ISO 8601 (YYYY-MM-DD) or NA, "
                  f"got {sequencing_run_date!r}")
+
+    # The one field with nothing to say when it is empty, so it never prompts.
+    notes = args.notes if args.notes is not None else form.get("notes", "")
 
     records = parse_fastq_files(fastq_root_dir, library_layout)
     if not records:
@@ -368,7 +463,7 @@ def main(argv: list[str]) -> None:
             "fastq_r2_md5": md5_file(r2) if r2 else NA,
             "investigator": investigator,
             "sequencing_run_date": sequencing_run_date,
-            "notes": args.notes or NA,
+            "notes": notes or NA,
             # Legacy columns rnaseq.py still reads by name.
             "Path Read 1": str(r1),
             "Path Read 2": str(r2) if r2 else NA,
