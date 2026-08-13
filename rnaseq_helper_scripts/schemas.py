@@ -424,13 +424,24 @@ METADATA = Table(
                  "the agent has no separate molecular target (Zta/Rta overexpression) and for "
                  "controls."),
         _c("perturbation_dose", "str", notes="`NA` if not applicable."),
-        _c("co_treatment", "enum", ("none", "PAA", "siRNA", "CRISPR", "unknown"),
+        _c("co_treatment", "enum",
+           ("none", "PAA", "siRNA", "CRISPR", "Expression Vector", "unknown"),
            notes="A second perturbation applied alongside the first, e.g. Zta under PAA. Kept "
                  "apart from `perturbation_*` so a combination stays two queryable facts."),
         _c("co_treatment_target", "str",
            notes="What the co-treatment acts on, e.g. `CNOT1`, `UPF1`. `PAA_replication` where "
                  "the co-treatment blocks viral DNA replication rather than a host gene. `NA` "
                  "when there is no co-treatment."),
+        _c("co_treatment_arm", "enum", ("test", "cntl", "NA"),
+           notes="Whenever there is a co-treatment, it comes as a pair of whole experiments -- "
+                 "one that got the real co-treatment and one that got its control/mock version "
+                 "(e.g. CNOT1 siRNA vs. scrambled siRNA), applied uniformly to every sample in "
+                 "that experiment rather than gated by the primary perturbation's own "
+                 "test/cntl condition. This records which half of that pair the experiment is. "
+                 "`test`/`cntl` reuse `condition`'s own vocabulary for the same kind of "
+                 "distinction applied to a second, independent perturbation, but this is a fact "
+                 "about the whole experiment, not about individual samples. Always paired with "
+                 "a real `series_label`. `NA` when there is no co-treatment."),
         _c("facs_purified", "enum", ("yes", "no", "unknown"),
            notes="Whether the sequenced population was sorted. An unsorted transfection mixes "
                  "transfected and untransfected cells, which changes what an expression value "
@@ -449,9 +460,9 @@ METADATA = Table(
                  "for backfilled legacy runs."),
         _c("library_strandedness", "enum", ("stranded", "unstranded", "unknown"),
            notes="What was intended at library prep, entered up front. Distinct from the "
-                 "measured `strandedness` below; a disagreement between the two flags a "
-                 "mislabelled sample or the wrong kit."),
-        _c("strandedness", "str",
+                 "measured `rseqc_measured_strandedness` below; a disagreement between the two "
+                 "flags a mislabelled sample or the wrong kit."),
+        _c("rseqc_measured_strandedness", "str",
            notes="Measured per sample by RSeQC after alignment. Filled in by the RSeQC step; "
                  "`NA` until then."),
         _c("fastq_r1", "str", notes="Absolute path, as mounted."),
@@ -460,15 +471,36 @@ METADATA = Table(
         _c("fastq_r2_md5", "str", notes="`NA` for SE."),
         _c("investigator", "str"),
         _c("sequencing_run_date", "str", notes="ISO 8601 date, or `NA`."),
-        _c("notes", "str", notes="Free text. The only free-text field."),
+        _c("notes", "str", notes="Free text."),
+        _c("series_label", "str",
+           notes="Shared name for a set of experiments run as one design with exactly one thing "
+                 "deliberately varied -- a timecourse, a dose series, a co-treatment pair. Every "
+                 "member carries the identical label, so members are found by grouping on it "
+                 "rather than by pointing at each other; adding a member later needs no edit to "
+                 "the existing ones. Convention is the `experiment_id` with the varying token "
+                 "removed (`Akata_anti-IgG_24hr_2022-12-08` -> `Akata_anti-IgG_2022-12-08`), so "
+                 "nothing has to be invented. Replaces the earlier `linked_experiments`, which "
+                 "could only express co-treatment pairs. Free text, not validated against the "
+                 "archive: a typo silently creates a one-member group, so the warehouse should "
+                 "flag any label appearing on a single experiment. `NA` when the experiment is "
+                 "in no series -- and then `series_variance` is `NA` too."),
+        _c("series_variance", "enum",
+           ("timepoint", "co_treatment", "dose", "cell_line", "library_prep", "NA"),
+           notes="Which variable distinguishes members of `series_label`, so a query knows which "
+                 "column to read across them. Mutually inclusive with `series_label`: both hold "
+                 "real values or both are `NA`, never one without the other. Forced to "
+                 "`co_treatment` whenever `co_treatment` is not `none` -- for a co-treatment "
+                 "pair the thing that differs between the halves is always the arm, so there is "
+                 "nothing to choose and nothing to get wrong."),
     ),
 )
 
-# Columns rnaseq.py still reads by their historical names. Kept in metadata.tsv so the
-# pipeline internals do not have to change in the same commit as the schema.
+# rnaseq.py still uses "Sample name" internally as its per-sample key. The rest of the old
+# historical-name mirrors (Path Read 1/2, Species, Condition, Control?, ConditionReplicate,
+# Experiment name) were pure duplicates of fastq_r1/fastq_r2/genome_build/condition/
+# replicate_index/experiment_id and have been retired.
 METADATA_LEGACY_COLUMNS = (
-    "Path Read 1", "Path Read 2", "Species", "Sample name", "Condition", "Control?",
-    "ConditionReplicate", "Experiment name",
+    "Sample name",
 )
 
 # Tables every successful run must contain, in the order docs list them.

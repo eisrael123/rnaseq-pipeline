@@ -1,0 +1,422 @@
+{
+  "generated_utc": "2026-08-13T16:13:19.717781Z",
+  "source_root": "/Volumes/TUNGSACore3/rnaseq_runs/Flemington_RNAseq_analysis_output",
+  "note": "md5 checksums + RSeQC strandedness, rebuilt after the PAA rename.",
+  "experiments": {
+    "Akata_anti-IgG_24hr_2022-12-08": {
+      "n_samples": 6,
+      "samples": {
+        "Akata_BCR-24hr_cntl1": {
+          "fastq_r1_md5": "fa3f4b0d701804f17dad5e6f20765062",
+          "fastq_r2_md5": "537094300b0733106f65b9c1a650dabe",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Akata_BCR-24hr_cntl2": {
+          "fastq_r1_md5": "d288662489c3f4c378e5a0da5e86d25b",
+          "fastq_r2_md5": "a643ede4c6f4ece5cdda9569944dd930",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Akata_BCR-24hr_cntl3": {
+          "fastq_r1_md5": "be4216111231f51a43dd17568777faeb",
+          "fastq_r2_md5": "da9cec1d6aae192a08ed2298cdc3e8ec",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Akata_BCR-24hr_test1": {
+          "fastq_r1_md5": "2ec72b53306fd8a9e48e0f41deda9c7d",
+          "fastq_r2_md5": "183bb1b6faca11bd375b0929e1f7af0a",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Akata_BCR-24hr_test2": {
+          "fastq_r1_md5": "822ec5ab03d173a9c2fc2dcc1450fb29",
+          "fastq_r2_md5": "d5fad4020f104c2d2ade18f7f0d153f2",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Akata_BCR-24hr_test3": {
+          "fastq_r1_md5": "ee743ee13a544f2f2288c59c30f27b57",
+          "fastq_r2_md5": "774b38f838b32cecce91aabdecd8a6c7",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "Akata_anti-IgG_48hr_2022-12-08": {
+      "n_samples": 4,
+      "samples": {
+        "Akata_BCR-48hr_cntl1": {
+          "fastq_r1_md5": "bd5a1fb188bc192ad7bf26b69112d485",
+          "fastq_r2_md5": "5dfe71fbe7cdf397d5d00fc64ac78aa3",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Akata_BCR-48hr_cntl2": {
+          "fastq_r1_md5": "e03cb36385e794554c10e27bbef9fdb7",
+          "fastq_r2_md5": "740e2f2909abdd0473bd8833be45844d",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Akata_BCR-48hr_test1": {
+          "fastq_r1_md5": "3e063e0d6660d2e0e1bb8bc3e1da23ef",
+          "fastq_r2_md5": "cd6ff8210b09648b37d6098185089d91",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Akata_BCR-48hr_test2": {
+          "fastq_r1_md5": "18a3ee87a9411d667589181730790076",
+          "fastq_r2_md5": "e93c28fe4bb132df7efa351e395ee5fd",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "BCBL1_Rta_2022-05-16": {
+      "n_samples": 6,
+      "samples": {
+        "BCBL_24_U1_S1_L001": {
+          "fastq_r1_md5": "66acfcadaa390ecce427ffd919472bd3",
+          "fastq_r2_md5": "7b1125c07b6e9b814b11bb41cff8901d",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "BCBL_24_U2_S2_L001": {
+          "fastq_r1_md5": "bf95f05f0ad9a6eb5591c941debe4653",
+          "fastq_r2_md5": "415ad545db7d0b470454cecaa8ffc9fc",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "BCBL_24_U3_S3_L001": {
+          "fastq_r1_md5": "385ac305ebe0f7463a88db498f8ea000",
+          "fastq_r2_md5": "f2dc3005d900a8cf4d251f3ba2d5fc6c",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "BCBL_24_I1_S4_L001": {
+          "fastq_r1_md5": "954d877dd4b278ba3cd92a29c249a208",
+          "fastq_r2_md5": "84be4b3235d6af0d0243969fa80db5be",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "BCBL_24_I2_S5_L001": {
+          "fastq_r1_md5": "05b0583dacd10564a05e4e98f4da1231",
+          "fastq_r2_md5": "f6f3c71e219e0876a4b680e36d1b3cfd",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "BCBL_24_I3_S6_L001": {
+          "fastq_r1_md5": "5f43fa4a56ee52d4e9bb0c8023e7908a",
+          "fastq_r2_md5": "dcd014854e35fa62fa9a5c4268b9bc4e",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "Mutu_Zta_2019-12-20": {
+      "n_samples": 8,
+      "samples": {
+        "13_Mutu-CNTL-1": {
+          "fastq_r1_md5": "40a56aa35b8f756631dfd37b73079ed7",
+          "fastq_r2_md5": "5c0fa132097d686eca3c05189153ef86",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "14_Mutu-CNTL-2": {
+          "fastq_r1_md5": "e37626c772e136bad3b70759713f7199",
+          "fastq_r2_md5": "504c73e74cdf459042148da40234ddeb",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "15_Mutu-CNTL-3": {
+          "fastq_r1_md5": "e986e7795e9d44b4fbe13ba34aa3be30",
+          "fastq_r2_md5": "514eefaa8b98f78491d73c80e833ba88",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "16_Mutu-CNTL-5": {
+          "fastq_r1_md5": "354cba5a6815c0837d15d34860925b1f",
+          "fastq_r2_md5": "b91267253a677254e8ebc765b65384c0",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "17_Mutu-Zta-1": {
+          "fastq_r1_md5": "8595757c491591b3561a43f400896093",
+          "fastq_r2_md5": "9ef3d6268b8cee462b2dd779297408d9",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "18_Mutu-Zta-3": {
+          "fastq_r1_md5": "89724b536199dda7c9c3dec0b096be79",
+          "fastq_r2_md5": "472eeaf57c9ed823127a6f2eb3d2ad41",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "19_Mutu-Zta-4": {
+          "fastq_r1_md5": "207011d5b6d9ff52ee406753836579b5",
+          "fastq_r2_md5": "0b4d86bd98f2c57451c8b33e19d9725d",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "20_Mutu-Zta-5": {
+          "fastq_r1_md5": "4a8e3e6041cee67fd6e95d64cc3089de",
+          "fastq_r2_md5": "977573e4da360a37ceb3430570a0b166",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "Mutu_Zta_2020-04-02": {
+      "n_samples": 8,
+      "samples": {
+        "MC1_S34_L004": {
+          "fastq_r1_md5": "40ee4c78a3c003f02f8b15a58b27201d",
+          "fastq_r2_md5": "5e334f65aa647624e5e0c24aba6a47e4",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MC2_S35_L004": {
+          "fastq_r1_md5": "a70b91a0e3660f63330408906386516a",
+          "fastq_r2_md5": "64fa768304bb33791fa4e7a09f2750fd",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MC3_S36_L004": {
+          "fastq_r1_md5": "6589956bbe5184078fdf8f74a4a0612e",
+          "fastq_r2_md5": "7f61d10d52dd69b1704a3d18a3be31d0",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MC4_S37_L004": {
+          "fastq_r1_md5": "450b60dcb4f56359279364f8d2f45a93",
+          "fastq_r2_md5": "e4ccee461606a46f163a11fae517c35d",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ1_S38_L004": {
+          "fastq_r1_md5": "b7e161787a058a288001baf60232ede7",
+          "fastq_r2_md5": "456faedfc6a45dd375168860c1265f09",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ3_S39_L004": {
+          "fastq_r1_md5": "ca09a0e097196195420d99735bc6f960",
+          "fastq_r2_md5": "56f3ad6fa08fedc4d85e9838160eba6d",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ4_S40_L004": {
+          "fastq_r1_md5": "7f0d6050b6042cd4b9d4b258e0986edb",
+          "fastq_r2_md5": "c46e0cc3671ffd474d0ea07f7dfed84f",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ5_S41_L004": {
+          "fastq_r1_md5": "a9dacc9fecaf9504053062c26c0d6aeb",
+          "fastq_r2_md5": "175a0c803e0512af8f7fb147243d5e29",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "Mutu_Zta_EXOSC3-KO_2025-08-31": {
+      "n_samples": 6,
+      "samples": {
+        "EXOSC3-KO-SVp1_L02": {
+          "fastq_r1_md5": "a767ced46dfcbcdef86e87f9c7faf1cb",
+          "fastq_r2_md5": "a29ffffb510b0a3f673fbbdda13245b9",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "EXOSC3-KO-SVp2_L02": {
+          "fastq_r1_md5": "5f9a57e029f924b9a59851e95cf365bf",
+          "fastq_r2_md5": "ac44c0157a079d6f64a683d073459c9d",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "EXOSC3-KO-SVp3_L02": {
+          "fastq_r1_md5": "d010075d228ab78414ff5d3f71967695",
+          "fastq_r2_md5": "e6b407495d785a67b74239be7730a458",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "EXOSC3-KO-Zta1_L04": {
+          "fastq_r1_md5": "5f42bb8e38271fb09ab53cc85c23f7cc",
+          "fastq_r2_md5": "0b375dd34fd7fa15304789a26e835359",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "EXOSC3-KO-Zta2_L04": {
+          "fastq_r1_md5": "2a0a001ad577364979edad701a235462",
+          "fastq_r2_md5": "e0ddf037d9d7c89b18dbea4be8f920e5",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "EXOSC3-KO-Zta3_L04": {
+          "fastq_r1_md5": "979c24ab8a64e23033ec82f7f3016076",
+          "fastq_r2_md5": "79ad961988354be14df82feb9187f936",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "Mutu_Zta_EXOSC3-control_2025-08-31": {
+      "n_samples": 6,
+      "samples": {
+        "Cntl-SVp1_L01": {
+          "fastq_r1_md5": "80863c67044a6aaff2ad78637b14ae9e",
+          "fastq_r2_md5": "71707c238bc185f259fea0b1aae7ba39",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Cntl-SVp2_L01": {
+          "fastq_r1_md5": "fbe75e2df948ef142dc4d570c80687c0",
+          "fastq_r2_md5": "2bc08aac2cb57686bb68f88986740191",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Cntl-SVp3_L01": {
+          "fastq_r1_md5": "adf0d717670e7000e6df4a35d0be72c3",
+          "fastq_r2_md5": "f786701351bf9dc1ce79acb86e5e81b0",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Cntl-Zta1_L03": {
+          "fastq_r1_md5": "af5e1137167382ef77e277dd9dcb5ca6",
+          "fastq_r2_md5": "1e2c2d9944ac30adca162ca841f7d5a6",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Cntl-Zta2_L03": {
+          "fastq_r1_md5": "1595a8a58036e6c54541bfc667ae3039",
+          "fastq_r2_md5": "204b41b516ce65311b5f2fd13baefec5",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "Cntl-Zta3_L03": {
+          "fastq_r1_md5": "948f6b5aadc82198fa4b755f009095c1",
+          "fastq_r2_md5": "cc668d68f28c5c0a0014f2fbac018987",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "Mutu_Zta_PAA-control_2020-11-26": {
+      "n_samples": 8,
+      "samples": {
+        "MC-1": {
+          "fastq_r1_md5": "cd931fb301929f2afa8b940e4a17db3a",
+          "fastq_r2_md5": "937220a3615e32017948b881251968d3",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MC-2": {
+          "fastq_r1_md5": "e56169cd5bb6fc8d740a75a08f0a5afa",
+          "fastq_r2_md5": "cfd193bbe82cd7af4d6ae8cf5040e600",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MC-3": {
+          "fastq_r1_md5": "55be24637b7c403720d2cfcbcd337750",
+          "fastq_r2_md5": "3222f5335c33cea44f7b1a2108f637f3",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MC-4": {
+          "fastq_r1_md5": "6759856bc08b149b7e6812b1cdae8686",
+          "fastq_r2_md5": "a3f0195f1b11dabf260090539788609f",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ-1": {
+          "fastq_r1_md5": "bfb371169cf4ae1011b95b24bec88e7e",
+          "fastq_r2_md5": "f07c1c18e87b26434a1cc5372b7dd14c",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ-2": {
+          "fastq_r1_md5": "888374d5606f285b6ab3cfcbad6bc3fe",
+          "fastq_r2_md5": "aa18f684fb385cfe9b5e634333e7998c",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ-3": {
+          "fastq_r1_md5": "39ab1c3df483c252dd10b93b42c6d1e2",
+          "fastq_r2_md5": "496d6130de4d151d5bc089afe65510d3",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ-4": {
+          "fastq_r1_md5": "abbe2a9754360fa072207227b3f4accd",
+          "fastq_r2_md5": "645accdda2e52387d0df2ce7faffba8e",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "Mutu_Zta_PAA-treated_2020-11-26": {
+      "n_samples": 8,
+      "samples": {
+        "MC-1": {
+          "fastq_r1_md5": "cd931fb301929f2afa8b940e4a17db3a",
+          "fastq_r2_md5": "937220a3615e32017948b881251968d3",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MC-2": {
+          "fastq_r1_md5": "e56169cd5bb6fc8d740a75a08f0a5afa",
+          "fastq_r2_md5": "cfd193bbe82cd7af4d6ae8cf5040e600",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MC-3": {
+          "fastq_r1_md5": "55be24637b7c403720d2cfcbcd337750",
+          "fastq_r2_md5": "3222f5335c33cea44f7b1a2108f637f3",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MC-4": {
+          "fastq_r1_md5": "6759856bc08b149b7e6812b1cdae8686",
+          "fastq_r2_md5": "a3f0195f1b11dabf260090539788609f",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ-P-1": {
+          "fastq_r1_md5": "b09ee0723847b6e9d0c5bc22e097097e",
+          "fastq_r2_md5": "80b4fd77a7833c6350676388e04c7f5d",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ-P-2": {
+          "fastq_r1_md5": "5855d0ac7132ec787bd6694f7a5d0dbf",
+          "fastq_r2_md5": "e436514a46e8a69c9b74b646ab1c105f",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ-P-3": {
+          "fastq_r1_md5": "9ba42b42bddaecd495a655a6c41c776c",
+          "fastq_r2_md5": "9898505db0447021c0ffd95ccb03fbf3",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MZ-P-4": {
+          "fastq_r1_md5": "78020e7aa949cf0e6eed47250dc7dc13",
+          "fastq_r2_md5": "844d1248226b2a2e00ae452fae56ffd2",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "Mutu_anti-IgM_2020-09-16": {
+      "n_samples": 6,
+      "samples": {
+        "MU1_S0_L001": {
+          "fastq_r1_md5": "0e3f8eef1393c4c233e539e48445003a",
+          "fastq_r2_md5": "caab4a7ae8ae0f527e92bd093e988297",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MU2_S0_L001": {
+          "fastq_r1_md5": "df24c0f7cc4226da4cf560a9266a8fd8",
+          "fastq_r2_md5": "4e86300561ff7b62a563c1794b21c3f8",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MU3_S0_L001": {
+          "fastq_r1_md5": "c4b92ee43b0763f2ec7359607ea651f6",
+          "fastq_r2_md5": "75b124c70758622f14db25d0980b19ff",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MI1_S0_L001": {
+          "fastq_r1_md5": "526b161d32c327564ea00fb8df36c899",
+          "fastq_r2_md5": "19da350442bc646f65398d5a80e57b98",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MI2_S0_L001": {
+          "fastq_r1_md5": "8c1d15ae92999fa08368f38bd97373be",
+          "fastq_r2_md5": "2b6e31b4df80a1f11407d84303114f4c",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "MI3_S0_L001": {
+          "fastq_r1_md5": "2b16baa6948a32ee67a6d7518d41bd91",
+          "fastq_r2_md5": "191b6254c2b170f24b7a4165e65053ea",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    },
+    "SNU719_Rta-Zta_2025-04-10": {
+      "n_samples": 6,
+      "samples": {
+        "SNU719_Rta-Zta_cntl1": {
+          "fastq_r1_md5": "9e20d7dfe85d5b8ada59f41d55193509",
+          "fastq_r2_md5": "c7b85d6559cf5b8214e22676c5c3ab38",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "SNU719_Rta-Zta_cntl2": {
+          "fastq_r1_md5": "c385bf71b86d305f60851150c806673f",
+          "fastq_r2_md5": "f883335d21aa0221ced479a5085443dc",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "SNU719_Rta-Zta_cntl3": {
+          "fastq_r1_md5": "74a065b8a8f20b6f0e1dc0986cffbb10",
+          "fastq_r2_md5": "173ca1b0b8997018ace8f3d81e4949ca",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "SNU719_Rta-Zta_test1": {
+          "fastq_r1_md5": "668d79f59c2ef6e1e820455c7b23c2b1",
+          "fastq_r2_md5": "0d42bb836f63e065fadab8b8c420bc86",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "SNU719_Rta-Zta_test2": {
+          "fastq_r1_md5": "d0ce89b80ccc40d3554f6620d9ac34b4",
+          "fastq_r2_md5": "0379d43a6e9adb1a13e11bed4066ebf2",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        },
+        "SNU719_Rta-Zta_test3": {
+          "fastq_r1_md5": "30affd82453a25e51c00dbfebe60263c",
+          "fastq_r2_md5": "241b06d9b276be2581064dfdcb241a40",
+          "rseqc_measured_strandedness": "fr-firststrand"
+        }
+      }
+    }
+  }
+}

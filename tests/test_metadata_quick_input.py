@@ -156,10 +156,25 @@ def test_the_file_does_not_disturb_sample_discovery(tmp_path):
 
 
 def test_investigator_whitespace_is_stripped(tmp_path):
-    """It becomes part of the output filename, which the pipeline later globs for."""
+    """Kept whitespace-free for consistency as a queryable metadata.tsv column value."""
     experiment = build_experiment(tmp_path)
     write_form_output(experiment, investigator_name="ethan israel")
 
     result = run(experiment, "--quick-input")
     assert result.returncode == 0, result.stderr
-    assert list(experiment["results_dir"].glob("ethanisrael_metadata_*.tsv"))
+
+    frame = pd.read_csv(experiment["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
+                        keep_default_na=False)
+    assert set(frame["investigator"]) == {"ethanisrael"}
+
+
+def test_only_metadata_tsv_is_written(tmp_path):
+    """There is exactly one metadata file; no separate timestamped copy."""
+    experiment = build_experiment(tmp_path)
+    write_form_output(experiment)
+
+    result = run(experiment, "--quick-input")
+    assert result.returncode == 0, result.stderr
+
+    tsvs = sorted(p.name for p in experiment["results_dir"].glob("*.tsv"))
+    assert tsvs == ["metadata.tsv"]

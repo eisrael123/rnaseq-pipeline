@@ -51,6 +51,7 @@
   .field { margin-top: 1.1rem; }
   .field:first-of-type { margin-top: .25rem; }
   label.name { display: block; font-weight: 600; margin-bottom: .3rem; }
+  .hint { margin: .4rem 0 0; color: var(--muted); font-size: .85rem; line-height: 1.45; }
   input[type="text"], input[type="number"], input[type="date"], select, textarea {
     width: 100%;
     padding: .55rem .6rem;
@@ -213,13 +214,14 @@
       </div>
 
       <div class="field">
-        <label class="name" for="co_treatment">Co-treatment</label>
+        <label class="name" for="co_treatment">Co-treatment type</label>
         <select id="co_treatment" required>
           <option value="">&mdash; select &mdash;</option>
           <option value="none">none</option>
           <option value="PAA">PAA</option>
           <option value="siRNA">siRNA</option>
           <option value="CRISPR">CRISPR</option>
+          <option value="Expression Vector">Expression Vector</option>
           <option value="unknown">unknown</option>
         </select>
       </div>
@@ -236,6 +238,15 @@
           <option value="NAT10">NAT10</option>
           <option value="TET1">TET1</option>
           <option value="BRRF1">BRRF1</option>
+        </select>
+      </div>
+
+      <div class="field" id="co_treatment_arm_field">
+        <label class="name" for="co_treatment_arm">Co-treatment arm</label>
+        <select id="co_treatment_arm">
+          <option value="">&mdash; select &mdash;</option>
+          <option value="test">test</option>
+          <option value="cntl">cntl</option>
         </select>
       </div>
 
@@ -302,6 +313,53 @@
         <label class="name" for="notes">Notes</label>
         <textarea id="notes" placeholder="Anything worth knowing years from now."></textarea>
       </div>
+
+      <div class="field">
+        <label class="name" for="series_label">Series label</label>
+        <input type="text" id="series_label"
+               placeholder="e.g. Akata_anti-IgG_2022-12-08 &mdash; identical on every member">
+        <p class="hint">A shared name for a set of experiments run as one design with exactly
+        one thing varied &mdash; a timecourse, a dose series, a co-treatment pair. Every member
+        gets the <strong>identical</strong> label.</p>
+        <p class="hint">Experiment folders are named
+        <code>&lt;cell_line&gt;_&lt;perturbation_agent&gt;_&lt;what varies&gt;_&lt;date&gt;</code>.
+        The series label is that same name with <strong>the varying value removed</strong>, so
+        it comes out identical for every member and nothing has to be invented:</p>
+        <p class="hint">
+        <strong>Timepoint series</strong> &mdash; folders
+        <code>Akata_anti-IgG_<u>24hr</u>_2022-12-08</code> and
+        <code>Akata_anti-IgG_<u>48hr</u>_2022-12-08</code><br>
+        &rarr; label <code>Akata_anti-IgG_2022-12-08</code><br>
+        <strong>Co-treatment pair</strong> &mdash; folders
+        <code>Mutu_Zta_EXOSC3<u>-KO</u>_2025-08-31</code> and
+        <code>Mutu_Zta_EXOSC3<u>-control</u>_2025-08-31</code><br>
+        &rarr; label <code>Mutu_Zta_EXOSC3_2025-08-31</code> (the target stays, only the arm
+        drops)</p>
+        <p class="hint">Leave blank if this experiment is not part of a series.</p>
+      </div>
+
+      <div class="field">
+        <label class="name" for="series_variance">Series variance</label>
+        <select id="series_variance">
+          <option value="">&mdash; select &mdash;</option>
+          <option value="timepoint">timepoint</option>
+          <option value="dose">dose</option>
+          <option value="cell_line">cell_line</option>
+          <option value="library_prep">library_prep</option>
+          <option value="co_treatment">co_treatment &mdash; set automatically</option>
+        </select>
+        <p class="hint">What differs between the members of that series &mdash; exactly one
+        thing, so this and <strong>Co-treatment type</strong> are mutually exclusive:</p>
+        <p class="hint">&bull; Set a co-treatment type &rarr; this locks to
+        <code>co_treatment</code>, since the thing that differs between the two halves of a pair
+        is always the treatment.<br>
+        &bull; Pick any other axis here &rarr; Co-treatment type collapses to <code>none</code>
+        and locks, and its target/arm fields disappear.<br>
+        &bull; Clear this field to get the co-treatment choice back.</p>
+        <p class="hint"><code>co_treatment</code> is never selectable by hand: it is only ever
+        correct alongside a real co-treatment type, and in that case it is already filled in for
+        you.</p>
+      </div>
     </fieldset>
 
     <div class="actions">
@@ -328,6 +386,11 @@ var agentField = document.getElementById("agent_field");
 var targetField = document.getElementById("target_field");
 var doseField = document.getElementById("dose_field");
 var coTreatmentTargetField = document.getElementById("co_treatment_target_field");
+var coTreatmentArmField = document.getElementById("co_treatment_arm_field");
+var seriesLabel = document.getElementById("series_label");
+var seriesVariance = document.getElementById("series_variance");
+var seriesVarianceCoTreatment =
+  seriesVariance.querySelector('option[value="co_treatment"]');
 
 // Every field written to the file, paired with the checkbox that overrides it with NA.
 var NA_PAIRS = [
@@ -385,7 +448,57 @@ function syncConditionalFields() {
   agentField.classList.toggle("hidden", !applies);
   targetField.classList.toggle("hidden", !applies);
   doseField.classList.toggle("hidden", !applies);
+  // A series varies along exactly ONE axis, so the two fields are mutually exclusive: choosing
+  // any axis other than co-treatment says this experiment is not a co-treatment pair, and the
+  // co-treatment fields collapse to "none" exactly as if that had been picked directly. The
+  // reverse lock lives below. metadata.py rejects the contradictory combination outright, so
+  // without this the form could hand you a file that only fails once you try to run it.
+  var axisIsNotCoTreatment =
+    seriesVariance.value !== "" && seriesVariance.value !== "co_treatment";
+  if (axisIsNotCoTreatment) {
+    if (coTreatment.value !== "none") {
+      coTreatment.dataset.userValue = coTreatment.value;
+      coTreatment.value = "none";
+    }
+    coTreatment.disabled = true;
+  } else if (coTreatment.disabled) {
+    // Clearing the axis hands the choice back, restoring whatever was collapsed away.
+    coTreatment.disabled = false;
+    if (coTreatment.dataset.userValue) {
+      coTreatment.value = coTreatment.dataset.userValue;
+      coTreatment.dataset.userValue = "";
+    }
+  }
+
   coTreatmentTargetField.classList.toggle("hidden", !coTreatmentApplies());
+  coTreatmentArmField.classList.toggle("hidden", !coTreatmentApplies());
+
+  // A co-treatment pair is a series whose members differ by the arm, always. There is exactly
+  // one right answer, so fill it in and lock it rather than offering a choice that could only
+  // be got wrong. Unlocking restores whatever the user had picked before, so toggling
+  // co-treatment on and off does not silently discard their answer.
+  if (coTreatmentApplies()) {
+    if (seriesVariance.value !== "co_treatment") {
+      seriesVariance.dataset.userValue = seriesVariance.value;
+    }
+    seriesVarianceCoTreatment.disabled = false;
+    seriesVariance.value = "co_treatment";
+    seriesVariance.disabled = true;
+  } else {
+    if (seriesVariance.disabled) {
+      seriesVariance.disabled = false;
+      seriesVariance.value = seriesVariance.dataset.userValue || "";
+    }
+    // "co_treatment" is only ever correct alongside a real co-treatment, and in that case it is
+    // filled in above rather than chosen -- so it is never a valid manual pick. metadata.py
+    // rejects the combination outright, and a form that can produce a file the pipeline refuses
+    // is a form that lets you waste a run finding out.
+    if (seriesVariance.value === "co_treatment") {
+      seriesVariance.value = "";
+      seriesVariance.dataset.userValue = "";
+    }
+    seriesVarianceCoTreatment.disabled = true;
+  }
 }
 
 function missingFields() {
@@ -421,6 +534,27 @@ function missingFields() {
   }
   if (coTreatmentApplies() && value("co_treatment_target") === "") {
     missing.push("co-treatment target");
+  }
+  if (coTreatmentApplies() && value("co_treatment_arm") === "") {
+    missing.push("co-treatment arm");
+  }
+  // Series label and variance are mutually inclusive: a label with nothing saying what varies
+  // cannot be read across members, and a variance with no label has nothing to group. With a
+  // co-treatment the variance is filled in automatically, so only the label is ever missing.
+  if (coTreatmentApplies() && value("series_label") === "") {
+    missing.push("series label");
+  } else if (!coTreatmentApplies()) {
+    if (value("series_label") !== "" && seriesVariance.value === "") {
+      missing.push("series variance (required once a series label is given)");
+    }
+    if (value("series_label") === "" && seriesVariance.value !== "") {
+      missing.push("series label (required once a series variance is given)");
+    }
+    // Belt and braces: the option is disabled above, so this is only reachable if a value was
+    // set some other way (autofill, a restored draft). metadata.py would reject it.
+    if (seriesVariance.value === "co_treatment") {
+      missing.push("a co-treatment type (series variance 'co_treatment' requires one)");
+    }
   }
   if (value("timepoint_hours") === "" && !checked("timepoint_hours_na")) {
     missing.push("timepoint");
@@ -460,13 +594,18 @@ function collect() {
       ? value("perturbation_dose") : NA,
     co_treatment: value("co_treatment"),
     co_treatment_target: coTreatmentApplies() ? value("co_treatment_target") : NA,
+    co_treatment_arm: coTreatmentApplies() ? value("co_treatment_arm") : NA,
     facs_purified: value("facs_purified"),
     facs_gfp_promoter: value("facs_gfp_promoter"),
     timepoint_hours: checked("timepoint_hours_na") ? NA : value("timepoint_hours"),
     library_selection: value("library_selection"),
     library_strandedness: value("library_strandedness"),
     sequencing_run_date: checked("sequencing_run_date_na") ? NA : value("sequencing_run_date"),
-    notes: value("notes")
+    notes: value("notes"),
+    // Mutually inclusive, so they are written as a pair: both real, or both NA.
+    series_label: value("series_label") === "" ? NA : value("series_label"),
+    series_variance: value("series_label") === "" && !coTreatmentApplies()
+      ? NA : seriesVariance.value
   };
 }
 

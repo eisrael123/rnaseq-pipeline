@@ -110,8 +110,11 @@ def test_metadata_accepts_known_vocab_and_derives_sample_ids(experiment):
     assert set(frame["organism"]) == {"human"}
     # Controls carry no perturbation.
     assert frame.loc[frame["condition"] == "cntl", "perturbation_target"].iloc[0] == "NA"
-    # Legacy columns survive for rnaseq.py.
-    assert {"Sample name", "Control?", "Experiment name"} <= set(frame.columns)
+    # "Sample name" survives for rnaseq.py; the other historical mirrors were retired as
+    # pure duplicates of condition/experiment_id/fastq_r1/fastq_r2/replicate_index.
+    assert {"Sample name"} <= set(frame.columns)
+    assert not {"Path Read 1", "Path Read 2", "Species", "Condition", "Control?",
+                "ConditionReplicate", "Experiment name"} & set(frame.columns)
     assert frame["fastq_r1_md5"].str.len().eq(32).all()
 
 
@@ -126,6 +129,8 @@ def test_co_treatment_is_recorded_apart_from_the_perturbation(experiment):
          "--perturbation-target", "NA", "--perturbation-dose", "NA",
          "--timepoint-hours", "24", "--co-treatment", "PAA",
          "--co-treatment-target", "PAA_replication",
+         "--co-treatment-arm", "test",
+         "--series-label", "SNU719_Zta-plus-Rta_PAA_2025-04-10",
          "--facs-purified", "yes", "--facs-gfp-promoter", "pCMV",
          "--library-selection", "polyA", "--library-strandedness", "stranded",
          "--sequencing-run-date", "2025-04-10"],
@@ -135,16 +140,130 @@ def test_co_treatment_is_recorded_apart_from_the_perturbation(experiment):
 
     frame = pd.read_csv(experiment["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
                         keep_default_na=False)
+    # A co-treatment (real or control/mock) is a fact about the whole experiment, applied
+    # uniformly -- unlike the primary perturbation, it is not test-condition-only.
+    assert set(frame["co_treatment"]) == {"PAA"}
+    assert set(frame["co_treatment_target"]) == {"PAA_replication"}
+    assert set(frame["co_treatment_arm"]) == {"test"}
+    # A co-treatment pair is a series, and its variance is forced rather than asked for.
+    assert set(frame["series_label"]) == {"SNU719_Zta-plus-Rta_PAA_2025-04-10"}
+    assert set(frame["series_variance"]) == {"co_treatment"}
     test_row = frame.loc[frame["condition"] == "test"].iloc[0]
     assert test_row["perturbation_agent"] == "Zta"
-    assert test_row["co_treatment"] == "PAA"
-    assert test_row["co_treatment_target"] == "PAA_replication"
-    # Neither was applied to the control arm.
     cntl_row = frame.loc[frame["condition"] == "cntl"].iloc[0]
-    assert cntl_row["co_treatment"] == "none"
-    assert cntl_row["co_treatment_target"] == "NA"
+    assert cntl_row["perturbation_agent"] == "NA"
     # FACS describes the material, so it is on both arms.
     assert set(frame["facs_purified"]) == {"yes"}
+
+
+def _co_treatment_args(experiment):
+    return [
+        sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
+        "--non-interactive", "--cell-line", "SNU719",
+        "--perturbation-type", "transfection", "--perturbation-agent", "Zta",
+        "--perturbation-target", "NA", "--perturbation-dose", "NA",
+        "--timepoint-hours", "24", "--co-treatment", "CRISPR",
+        "--co-treatment-target", "EXOSC3",
+        "--facs-purified", "yes", "--facs-gfp-promoter", "pCMV",
+        "--library-selection", "polyA", "--library-strandedness", "stranded",
+        "--sequencing-run-date", "2025-08-31",
+    ]
+
+
+def _plain_args(experiment):
+    return [
+        sys.executable, str(REPO_ROOT / "metadata.py"), *run_args(experiment),
+        "--non-interactive", "--cell-line", "SNU719",
+        "--perturbation-type", "transfection", "--perturbation-agent", "Zta",
+        "--perturbation-target", "NA", "--perturbation-dose", "NA",
+        "--timepoint-hours", "24", "--co-treatment", "none",
+        "--facs-purified", "yes", "--facs-gfp-promoter", "pCMV",
+        "--library-selection", "polyA", "--library-strandedness", "stranded",
+        "--sequencing-run-date", "2025-08-31",
+    ]
+
+
+def test_co_treatment_requires_arm_and_series_label(experiment):
+    """A co-treatment always comes as a pair, so both halves of that fact are required."""
+    environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
+    base = _co_treatment_args(experiment)
+
+    # --co-treatment-arm omitted.
+    result = subprocess.run([*base, "--series-label", "Mutu_Zta_EXOSC3_2025-08-31"],
+                            capture_output=True, text=True, env=environment)
+    assert result.returncode != 0
+
+    # --series-label omitted.
+    result = subprocess.run([*base, "--co-treatment-arm", "test"],
+                            capture_output=True, text=True, env=environment)
+    assert result.returncode != 0
+
+
+def test_co_treatment_forces_series_variance(experiment):
+    """The one right answer is filled in, and an attempt to override it is refused."""
+    environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
+    base = [*_co_treatment_args(experiment), "--co-treatment-arm", "test",
+            "--series-label", "Mutu_Zta_EXOSC3_2025-08-31"]
+
+    # Not supplied at all: it is still set, without prompting.
+    result = subprocess.run(base, capture_output=True, text=True, env=environment)
+    assert result.returncode == 0, result.stderr
+    frame = pd.read_csv(experiment["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
+                        keep_default_na=False)
+    assert set(frame["series_variance"]) == {"co_treatment"}
+
+    # Contradicting it is an error rather than a silent overwrite.
+    result = subprocess.run([*base, "--series-variance", "timepoint"],
+                            capture_output=True, text=True, env=environment)
+    assert result.returncode != 0
+    assert "forces it to 'co_treatment'" in result.stderr
+
+
+def test_series_label_and_variance_are_mutually_inclusive(experiment):
+    """Either both carry a real value or both are NA -- never one without the other."""
+    environment = dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline")
+    base = _plain_args(experiment)
+
+    # Label without variance.
+    result = subprocess.run([*base, "--series-label", "Akata_anti-IgG_2022-12-08"],
+                            capture_output=True, text=True, env=environment)
+    assert result.returncode != 0
+    assert "mutually" in result.stderr
+
+    # Variance without label.
+    result = subprocess.run([*base, "--series-variance", "timepoint"],
+                            capture_output=True, text=True, env=environment)
+    assert result.returncode != 0
+    assert "mutually" in result.stderr
+
+    # Neither: both land as NA, and no series is invented.
+    result = subprocess.run(base, capture_output=True, text=True, env=environment)
+    assert result.returncode == 0, result.stderr
+    frame = pd.read_csv(experiment["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
+                        keep_default_na=False)
+    assert set(frame["series_label"]) == {"NA"}
+    assert set(frame["series_variance"]) == {"NA"}
+
+    # Both: recorded on every row, since series membership is a whole-experiment fact.
+    result = subprocess.run(
+        [*base, "--series-label", "Akata_anti-IgG_2022-12-08", "--series-variance", "timepoint"],
+        capture_output=True, text=True, env=environment)
+    assert result.returncode == 0, result.stderr
+    frame = pd.read_csv(experiment["results_dir"] / "metadata.tsv", sep="\t", dtype=str,
+                        keep_default_na=False)
+    assert set(frame["series_label"]) == {"Akata_anti-IgG_2022-12-08"}
+    assert set(frame["series_variance"]) == {"timepoint"}
+
+
+def test_series_variance_co_treatment_rejected_without_a_co_treatment(experiment):
+    """That value is set automatically; claiming it by hand would be a lie about the design."""
+    result = subprocess.run(
+        [*_plain_args(experiment), "--series-label", "X_2020-01-01",
+         "--series-variance", "co_treatment"],
+        capture_output=True, text=True, env=dict(os.environ, CONDA_DEFAULT_ENV="rnaseqpipeline"),
+    )
+    assert result.returncode != 0
+    assert "co_treatment is 'none'" in result.stderr
 
 
 def test_co_treatment_target_rejects_free_text(experiment):

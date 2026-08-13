@@ -253,10 +253,11 @@ Notes on how it behaves:
   form will silently be unable to offer a value the pipeline supports.
 
 #### For rnaseq.py: 
-- `<metadata_file>`: The file path of generated metadata tsv file `output_dir/*.tsv`.
 - `<reference_dir>`: Same argument as metadata.py.
 - `<scripts_dir>`: The `./rnaseq_helper_scripts` folder in this directory.
-- `<results_dir>`: Same argument as metadata.py. 
+- `<results_dir>`: Same argument as metadata.py. rnaseq.py reads `<results_dir>/metadata.tsv`
+  directly -- metadata.py must have already generated it there -- and updates it in place (e.g.
+  once RSeQC infers `rseqc_measured_strandedness`).
 
 Optional:
 - `--annotation-version`: override the annotation release recorded in the manifest. Needed only
@@ -333,11 +334,11 @@ Quick mapping examples from the command above:
 
 #### 3. Run the pipeline
    ```bash
-   python rnaseq.py <metadata_file> <reference_dir> <scripts_dir> <results_dir>
+   python rnaseq.py <reference_dir> <scripts_dir> <results_dir>
    ```
    Example:
    ```bash
-   python rnaseq.py /data/output/ethan_metadata_04232026_174629.tsv /data/referenceFiles /work/rnaseq_helper_scripts /data/output
+   python rnaseq.py /data/referenceFiles /work/rnaseq_helper_scripts /data/output
    ```
  
 

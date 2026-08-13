@@ -358,7 +358,7 @@ All QC output in long format, so a new metric never changes the schema.
 
 ## Inputs
 
-`metadata.tsv` is produced by `metadata.py`, copied into `<results_dir>/` and updated in place once strandedness is inferred. It additionally carries the legacy columns `Path Read 1`, `Path Read 2`, `Species`, `Sample name`, `Condition`, `Control?`, `ConditionReplicate`, `Experiment name`, which `rnaseq.py` still reads by name, so the validator requires these columns to be present rather than requiring an exact match.
+`metadata.tsv` is produced by `metadata.py`, copied into `<results_dir>/` and updated in place once strandedness is inferred. It additionally carries the legacy columns `Sample name`, which `rnaseq.py` still reads by name, so the validator requires these columns to be present rather than requiring an exact match.
 
 ### `metadata.tsv`
 
@@ -381,22 +381,25 @@ One row per FASTQ sample. Produced by metadata.py and copied into results_dir.
 | `perturbation_agent` | str | What was delivered, e.g. `Zta`, `Rta`, `Zta+Rta`, `anti-IgG`, `CC115`. `NA` for controls. |
 | `perturbation_target` | str | The gene the agent acts on, when it has one, e.g. `BMRF1`, `SRSF1`. `NA` when the agent has no separate molecular target (Zta/Rta overexpression) and for controls. |
 | `perturbation_dose` | str | `NA` if not applicable. |
-| `co_treatment` | enum: `none` \| `PAA` \| `siRNA` \| `CRISPR` \| `unknown` | A second perturbation applied alongside the first, e.g. Zta under PAA. Kept apart from `perturbation_*` so a combination stays two queryable facts. |
+| `co_treatment` | enum: `none` \| `PAA` \| `siRNA` \| `CRISPR` \| `Expression Vector` \| `unknown` | A second perturbation applied alongside the first, e.g. Zta under PAA. Kept apart from `perturbation_*` so a combination stays two queryable facts. |
 | `co_treatment_target` | str | What the co-treatment acts on, e.g. `CNOT1`, `UPF1`. `PAA_replication` where the co-treatment blocks viral DNA replication rather than a host gene. `NA` when there is no co-treatment. |
+| `co_treatment_arm` | enum: `test` \| `cntl` \| `NA` | Whenever there is a co-treatment, it comes as a pair of whole experiments -- one that got the real co-treatment and one that got its control/mock version (e.g. CNOT1 siRNA vs. scrambled siRNA), applied uniformly to every sample in that experiment rather than gated by the primary perturbation's own test/cntl condition. This records which half of that pair the experiment is. `test`/`cntl` reuse `condition`'s own vocabulary for the same kind of distinction applied to a second, independent perturbation, but this is a fact about the whole experiment, not about individual samples. Always paired with a real `series_label`. `NA` when there is no co-treatment. |
 | `facs_purified` | enum: `yes` \| `no` \| `unknown` | Whether the sequenced population was sorted. An unsorted transfection mixes transfected and untransfected cells, which changes what an expression value means. |
 | `facs_gfp_promoter` | enum: `pCMV` \| `BMRF1p` \| `none` \| `unknown` | Which promoter drove the GFP that sorting selected on. `pCMV` reports transfection; `BMRF1p` reports that the lytic cycle actually started, which is a different population. |
 | `timepoint_hours` | float | `NA` if not applicable. |
 | `library_layout` | enum: `PE` \| `SE` |  |
 | `library_selection` | enum: `polyA` \| `ribodepleted` \| `unknown` | RNA selection before library construction. Not a comparable axis: non-polyadenylated and unprocessed transcripts are absent from `polyA` libraries by construction, so expression must not be compared across differing values without saying so. `unknown` is an unrecorded value, used for backfilled legacy runs. |
-| `library_strandedness` | enum: `stranded` \| `unstranded` \| `unknown` | What was intended at library prep, entered up front. Distinct from the measured `strandedness` below; a disagreement between the two flags a mislabelled sample or the wrong kit. |
-| `strandedness` | str | Measured per sample by RSeQC after alignment. Filled in by the RSeQC step; `NA` until then. |
+| `library_strandedness` | enum: `stranded` \| `unstranded` \| `unknown` | What was intended at library prep, entered up front. Distinct from the measured `rseqc_measured_strandedness` below; a disagreement between the two flags a mislabelled sample or the wrong kit. |
+| `rseqc_measured_strandedness` | str | Measured per sample by RSeQC after alignment. Filled in by the RSeQC step; `NA` until then. |
 | `fastq_r1` | str | Absolute path, as mounted. |
 | `fastq_r2` | str | `NA` for SE. |
 | `fastq_r1_md5` | str |  |
 | `fastq_r2_md5` | str | `NA` for SE. |
 | `investigator` | str |  |
 | `sequencing_run_date` | str | ISO 8601 date, or `NA`. |
-| `notes` | str | Free text. The only free-text field. |
+| `notes` | str | Free text. |
+| `series_label` | str | Shared name for a set of experiments run as one design with exactly one thing deliberately varied -- a timecourse, a dose series, a co-treatment pair. Every member carries the identical label, so members are found by grouping on it rather than by pointing at each other; adding a member later needs no edit to the existing ones. Convention is the `experiment_id` with the varying token removed (`Akata_anti-IgG_24hr_2022-12-08` -> `Akata_anti-IgG_2022-12-08`), so nothing has to be invented. Replaces the earlier `linked_experiments`, which could only express co-treatment pairs. Free text, not validated against the archive: a typo silently creates a one-member group, so the warehouse should flag any label appearing on a single experiment. `NA` when the experiment is in no series -- and then `series_variance` is `NA` too. |
+| `series_variance` | enum: `timepoint` \| `co_treatment` \| `dose` \| `cell_line` \| `library_prep` \| `NA` | Which variable distinguishes members of `series_label`, so a query knows which column to read across them. Mutually inclusive with `series_label`: both hold real values or both are `NA`, never one without the other. Forced to `co_treatment` whenever `co_treatment` is not `none` -- for a co-treatment pair the thing that differs between the halves is always the arm, so there is nothing to choose and nothing to get wrong. |
 
 ## `event_key`
 
