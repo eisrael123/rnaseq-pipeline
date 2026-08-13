@@ -53,7 +53,7 @@ def main(argv: list[str]) -> int:
         ctx, results, ref, annotation, bw_man.to_dict(orient="records"))
     print(f"signal_over_gene rows={rows} status={status}")
 
-    library_type = meta["strandedness"].iloc[0]
+    library_type = meta["rseqc_measured_strandedness"].iloc[0]
     organism = meta["organism"].iloc[0]
     strand_status = bigwig.assert_strand_assignment(
         results, organism, library_type, annotation)

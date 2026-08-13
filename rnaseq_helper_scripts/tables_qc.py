@@ -173,6 +173,6 @@ def update_metadata_strandedness(results_dir: Path, library_types: dict[str, str
     frame = pd.read_csv(path, sep="\t", dtype=str, keep_default_na=False)
     if "Sample name" not in frame.columns:
         raise ValueError(f"{path} has no 'Sample name' column")
-    frame["strandedness"] = frame["Sample name"].map(library_types).fillna(NA)
+    frame["rseqc_measured_strandedness"] = frame["Sample name"].map(library_types).fillna(NA)
     frame.to_csv(path, sep="\t", index=False)
     return path

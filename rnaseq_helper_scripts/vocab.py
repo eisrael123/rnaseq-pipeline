@@ -16,7 +16,29 @@ PERTURBATION_TYPES = frozenset({
 # A second perturbation applied alongside the first, e.g. Zta transfection under PAA. Recorded
 # separately so "Zta+PAA" stays two queryable facts rather than one opaque string.
 CO_TREATMENTS = frozenset({
-    "none", "PAA", "siRNA", "CRISPR", "unknown",
+    "none", "PAA", "siRNA", "CRISPR", "Expression Vector", "unknown",
+})
+# Whenever there IS a co-treatment, it always comes as a pair of whole experiments -- one that
+# got the real co-treatment and one that got its control/mock version (e.g. CNOT1 siRNA vs.
+# scrambled siRNA; CRISPR guide vs. Cas9 with no guide) -- applied uniformly to every sample in
+# that experiment, not gated by the primary perturbation's own test/cntl condition. This records
+# which half of that pair the experiment is. `test`/`cntl` deliberately reuse CONDITIONS'
+# vocabulary (same kind of distinction -- perturbed vs. baseline side -- just for a different,
+# independent perturbation), but this is a fact about the whole experiment, not about individual
+# samples the way `condition` is. Always paired with a real `series_label`, whose
+# `series_variance` is forced to `co_treatment`. `NA` only when there is no co-treatment at all.
+CO_TREATMENT_ARMS = frozenset({
+    "test", "cntl", "NA",
+})
+# Which variable distinguishes the members of a `series_label` group. A series is a set of
+# experiments run as one design with exactly one thing deliberately varied; this names that
+# thing, so a query knows which column to read across members without guessing.
+# `co_treatment` is never typed by hand -- it is forced whenever `co_treatment` is not `none`,
+# because for a co-treatment pair the thing that differs between the two halves is always the
+# arm. The rest are investigator's discretion, and `NA` only when the experiment is in no
+# series at all (`series_label` is `NA` too -- the two are mutually inclusive).
+SERIES_VARIANCES = frozenset({
+    "timepoint", "co_treatment", "dose", "cell_line", "library_prep", "NA",
 })
 # What the co-treatment acts on. `PAA_replication` is the odd one out: PAA blocks viral DNA
 # replication rather than targeting a host gene, so the "target" is the process it blocks.
@@ -66,6 +88,8 @@ VOCABULARIES = {
     "perturbation_type": PERTURBATION_TYPES,
     "co_treatment": CO_TREATMENTS,
     "co_treatment_target": CO_TREATMENT_TARGETS,
+    "co_treatment_arm": CO_TREATMENT_ARMS,
+    "series_variance": SERIES_VARIANCES,
     "facs_purified": FACS_PURIFIED_VALUES,
     "facs_gfp_promoter": FACS_GFP_PROMOTERS,
     "organism": ORGANISMS,

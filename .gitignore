@@ -5,6 +5,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.devvenv/
 
 # Repository content that happens to use ignored extensions.
 !docs/*.txt

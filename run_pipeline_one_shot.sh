@@ -52,4 +52,4 @@ docker run --rm \
     --output-dir ${CONTAINER_OUTPUT_DIR} \
     --quick-input \
     --non-interactive && \
-  python rnaseq.py ${CONTAINER_OUTPUT_DIR}/*_metadata_*.tsv ${CONTAINER_REFERENCE_DIR} ${CONTAINER_SCRIPTS_DIR} ${CONTAINER_OUTPUT_DIR}"
+  python rnaseq.py ${CONTAINER_REFERENCE_DIR} ${CONTAINER_SCRIPTS_DIR} ${CONTAINER_OUTPUT_DIR}"
