@@ -134,5 +134,7 @@ def star_strand_label(library_type: str, star_strand: str) -> str:
     except KeyError:
         raise ValueError(
             f"no strand label for library_type={library_type!r} track={star_strand!r}. "
-            f"An unstranded library must not produce a str2 track."
+            f"An unstranded library must not produce a str2 track: STAR aligns before the "
+            f"library type is measured, so its stranded str1/str2 pair has to be rebuilt as a "
+            f"single track by bigwig.regenerate_unstranded_wigs before this point."
         ) from None

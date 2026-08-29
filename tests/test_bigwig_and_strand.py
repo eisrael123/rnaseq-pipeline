@@ -1,5 +1,8 @@
 """bigWig naming, the strand mapping, and the manifest-to-disk correspondence."""
 
+import subprocess
+from pathlib import Path
+
 import pandas as pd
 import pytest
 
@@ -137,3 +140,67 @@ def test_wig_rescaling_preserves_declarations(tmp_path):
     target = tmp_path / "out.wig"
     bigwig._rescale_wig(source, target, 0.5)
     assert target.read_text() == "variableStep chrom=chr1\n1\t5\n2\t10\n"
+
+
+def test_unstranded_signal_is_rebuilt_from_bam(tmp_path, monkeypatch):
+    """An unstranded library must have its str1/str2 pair rebuilt as one track.
+
+    STAR aligns before RSeQC can measure the library type, so it always writes a stranded
+    pair. Regenerating from the BAM is what keeps an unstranded sample from either crashing on
+    str2 or silently losing the reads in it.
+    """
+    sample = "S1"
+    star_dir = tmp_path / "star" / sample
+    star_dir.mkdir(parents=True)
+    (star_dir / f"{sample}_Aligned.sortedByCoord.out.bam").write_text("bam")
+    for strand in ("str1", "str2"):
+        for content in ("Unique", "UniqueMultiple"):
+            (star_dir / f"{sample}_Signal.{content}.{strand}.out.wig").write_text("old\n")
+
+    def fake_run(command, *args, **kwargs):
+        assert "--outWigStrand" in command
+        assert command[command.index("--outWigStrand") + 1] == "Unstranded"
+        assert "inputAlignmentsFromBAM" in command
+        prefix = Path(command[command.index("--outFileNamePrefix") + 1])
+        for content in ("Unique", "UniqueMultiple"):
+            path = prefix.parent / f"{prefix.name}Signal.{content}.str1.out.wig"
+            path.write_text("rebuilt\n")
+        return subprocess.CompletedProcess(command, 0)
+
+    monkeypatch.setattr(bigwig.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(bigwig.subprocess, "run", fake_run)
+
+    bigwig.regenerate_unstranded_wigs(tmp_path, sample)
+
+    remaining = sorted(p.name for p in star_dir.glob("*Signal.*.out.wig"))
+    assert remaining == [
+        f"{sample}_Signal.Unique.str1.out.wig",
+        f"{sample}_Signal.UniqueMultiple.str1.out.wig",
+    ]
+    for name in remaining:
+        assert (star_dir / name).read_text() == "rebuilt\n"
+    # Every surviving track must now be labellable for an unstranded library.
+    for name in remaining:
+        star_strand = bigwig.WIG_NAME_RE.search(name).group(2)
+        assert strandedness.star_strand_label(
+            strandedness.UNSTRANDED, star_strand) == "unstranded"
+
+
+def test_unstranded_regeneration_keeps_wigs_when_star_fails(tmp_path, monkeypatch):
+    """A failed rebuild must not destroy the existing signal."""
+    sample = "S1"
+    star_dir = tmp_path / "star" / sample
+    star_dir.mkdir(parents=True)
+    (star_dir / f"{sample}_Aligned.sortedByCoord.out.bam").write_text("bam")
+    original = star_dir / f"{sample}_Signal.Unique.str1.out.wig"
+    original.write_text("old\n")
+
+    def failing_run(command, *args, **kwargs):
+        raise subprocess.CalledProcessError(1, command)
+
+    monkeypatch.setattr(bigwig.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(bigwig.subprocess, "run", failing_run)
+
+    with pytest.raises(bigwig.BigWigError, match="regenerate"):
+        bigwig.regenerate_unstranded_wigs(tmp_path, sample)
+    assert original.read_text() == "old\n"
