@@ -341,7 +341,7 @@
       <div class="field">
         <label class="name" for="series_variance">Series variance</label>
         <select id="series_variance">
-          <option value="">&mdash; select &mdash;</option>
+          <option value="">&mdash; not part of a series &mdash;</option>
           <option value="timepoint">timepoint</option>
           <option value="dose">dose</option>
           <option value="cell_line">cell_line</option>
@@ -377,7 +377,10 @@ var OUTPUT_FILENAME = "input_args.json";
 var NA = "NA";
 
 var form = document.getElementById("form");
-var status = document.getElementById("status");
+// Deliberately not named `status`: assigning an element to that identifier collides with the
+// legacy global `window.status` (browser status-bar text), whose setter silently stringifies
+// the value instead of keeping the element reference, breaking every `.textContent` write below.
+var statusEl = document.getElementById("status");
 var downloadButton = document.getElementById("download");
 var investigator = document.getElementById("investigator_name");
 var perturbationType = document.getElementById("perturbation_type");
@@ -443,6 +446,18 @@ function coTreatmentApplies() {
   return coTreatment.value !== "none";
 }
 
+// "Not part of a series" is the empty default. metadata.py also accepts the literal "NA" as
+// meaning absent, so treat the two the same here rather than letting the form and the parser
+// disagree about what an unset field looks like.
+function seriesVarianceChosen() {
+  return seriesVariance.value !== "" && seriesVariance.value !== NA;
+}
+
+function seriesLabelGiven() {
+  var label = value("series_label");
+  return label !== "" && label !== NA;
+}
+
 function syncConditionalFields() {
   var applies = perturbationApplies();
   agentField.classList.toggle("hidden", !applies);
@@ -454,7 +469,7 @@ function syncConditionalFields() {
   // reverse lock lives below. metadata.py rejects the contradictory combination outright, so
   // without this the form could hand you a file that only fails once you try to run it.
   var axisIsNotCoTreatment =
-    seriesVariance.value !== "" && seriesVariance.value !== "co_treatment";
+    seriesVarianceChosen() && seriesVariance.value !== "co_treatment";
   if (axisIsNotCoTreatment) {
     if (coTreatment.value !== "none") {
       coTreatment.dataset.userValue = coTreatment.value;
@@ -541,13 +556,13 @@ function missingFields() {
   // Series label and variance are mutually inclusive: a label with nothing saying what varies
   // cannot be read across members, and a variance with no label has nothing to group. With a
   // co-treatment the variance is filled in automatically, so only the label is ever missing.
-  if (coTreatmentApplies() && value("series_label") === "") {
+  if (coTreatmentApplies() && !seriesLabelGiven()) {
     missing.push("series label");
   } else if (!coTreatmentApplies()) {
-    if (value("series_label") !== "" && seriesVariance.value === "") {
+    if (seriesLabelGiven() && !seriesVarianceChosen()) {
       missing.push("series variance (required once a series label is given)");
     }
-    if (value("series_label") === "" && seriesVariance.value !== "") {
+    if (!seriesLabelGiven() && seriesVarianceChosen()) {
       missing.push("series label (required once a series variance is given)");
     }
     // Belt and braces: the option is disabled above, so this is only reachable if a value was
@@ -570,11 +585,11 @@ function refresh() {
   var missing = missingFields();
   downloadButton.disabled = missing.length > 0;
   if (missing.length === 0) {
-    status.textContent = "Ready to download.";
+    statusEl.textContent = "Ready to download.";
   } else if (missing.length === 1) {
-    status.textContent = "Still needed: " + missing[0] + ".";
+    statusEl.textContent = "Still needed: " + missing[0] + ".";
   } else {
-    status.textContent = "Still needed: " + missing.join(", ") + ".";
+    statusEl.textContent = "Still needed: " + missing.join(", ") + ".";
   }
 }
 
@@ -603,9 +618,8 @@ function collect() {
     sequencing_run_date: checked("sequencing_run_date_na") ? NA : value("sequencing_run_date"),
     notes: value("notes"),
     // Mutually inclusive, so they are written as a pair: both real, or both NA.
-    series_label: value("series_label") === "" ? NA : value("series_label"),
-    series_variance: value("series_label") === "" && !coTreatmentApplies()
-      ? NA : seriesVariance.value
+    series_label: seriesLabelGiven() ? value("series_label") : NA,
+    series_variance: seriesVarianceChosen() ? seriesVariance.value : NA
   };
 }
 
@@ -627,7 +641,7 @@ form.addEventListener("submit", function (event) {
   link.click();
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
-  status.textContent = "Downloaded " + OUTPUT_FILENAME
+  statusEl.textContent = "Downloaded " + OUTPUT_FILENAME
     + " — drop it into your experiment's FASTQ folder.";
 });
 

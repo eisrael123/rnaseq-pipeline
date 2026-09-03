@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import pandas as pd
@@ -80,6 +81,72 @@ def _rescale_wig(source: Path, target: Path, factor: float) -> None:
                 write(line)
 
 
+def _has_stranded_wigs(star_dir: Path) -> bool:
+    """True if STAR left a per-strand signal pair, i.e. anything beyond ``str1``."""
+    for wig in star_dir.glob("*Signal.*.out.wig"):
+        match = WIG_NAME_RE.search(wig.name)
+        if match and match.group(2) != "str1":
+            return True
+    return False
+
+
+def regenerate_unstranded_wigs(results_dir: Path, sample_name: str) -> None:
+    """Rebuild one sample's signal as a single unstranded track, straight from its BAM.
+
+    STAR's wiggle strandedness is fixed at alignment time, but the library type is only known
+    afterwards -- RSeQC needs the BAM to measure it. So STAR always aligns with the default
+    ``--outWigStrand Stranded`` and emits ``str1``/``str2``. For a genuinely unstranded library
+    that pair is an arbitrary split of one signal: neither track is a genomic strand, and
+    dropping either would silently discard half the reads.
+
+    ``--runMode inputAlignmentsFromBAM`` re-derives the signal from the finished BAM with
+    ``--outWigStrand Unstranded``, producing one ``str1`` track per content type that holds all
+    the reads. No realignment happens, so this costs one pass over the BAM.
+    """
+    star_dir = Path(results_dir) / "star" / sample_name
+    bam = star_dir / f"{sample_name}_Aligned.sortedByCoord.out.bam"
+    if not bam.is_file():
+        raise BigWigError(
+            f"cannot regenerate unstranded signal for {sample_name}: BAM missing at {bam}"
+        )
+    if not shutil.which("STAR"):
+        raise BigWigError("STAR is not on PATH; cannot regenerate unstranded signal")
+
+    # Build into a scratch directory so a failure leaves the existing wiggles untouched.
+    with tempfile.TemporaryDirectory(dir=star_dir) as scratch:
+        prefix = Path(scratch) / "regen_"
+        command = [
+            "STAR",
+            "--runMode", "inputAlignmentsFromBAM",
+            "--inputBAMfile", str(bam),
+            "--outWigType", "wiggle",
+            "--outWigStrand", "Unstranded",
+            "--outWigNorm", "None",
+            "--outFileNamePrefix", str(prefix),
+        ]
+        try:
+            subprocess.run(command, check=True)
+        except subprocess.CalledProcessError as error:
+            raise BigWigError(
+                f"STAR failed to regenerate unstranded signal for {sample_name}: {error}"
+            ) from error
+
+        rebuilt = sorted(Path(scratch).glob("*Signal.*.out.wig"))
+        if not rebuilt:
+            raise BigWigError(
+                f"STAR produced no signal wiggles for {sample_name} in unstranded mode"
+            )
+
+        # Only now discard the stranded pair, then move the unstranded tracks into place.
+        for stale in star_dir.glob("*Signal.*.out.wig"):
+            stale.unlink()
+        for wig in rebuilt:
+            match = WIG_NAME_RE.search(wig.name)
+            if not match:
+                raise BigWigError(f"unexpected STAR signal filename: {wig.name}")
+            shutil.move(str(wig), str(star_dir / f"{sample_name}_{match.group(0)}"))
+
+
 def convert_sample_bigwigs(ctx: RunContext, results_dir: Path, sample_name: str,
                            library_type: str, chr_sizes: Path,
                            normalization: str = DEFAULT_NORMALIZATION) -> list[dict]:
@@ -91,6 +158,11 @@ def convert_sample_bigwigs(ctx: RunContext, results_dir: Path, sample_name: str,
 
     if not shutil.which("wigToBigWig"):
         raise BigWigError("wigToBigWig is not on PATH")
+
+    # An unstranded library cannot be described by STAR's str1/str2 pair, so rebuild the signal
+    # as a single track before anything tries to give those two files a genomic strand.
+    if library_type == strandedness.UNSTRANDED and _has_stranded_wigs(star_dir):
+        regenerate_unstranded_wigs(results_dir, sample_name)
 
     sample_id = ctx.sample_id(sample_name)
     sizes = star_library_sizes(results_dir, sample_name)
