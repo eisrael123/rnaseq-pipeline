@@ -1130,7 +1130,9 @@ def merge_deseq2_results(results_dir):
 
     # Read the metadata file to determine control and test samples
     metadata_df = pd.read_csv(metadata_path, sep='\t')
-    control_samples = metadata_df[metadata_df['condition'] == 'control']['Sample name'].tolist()
+    # deseq2_metadata.tsv labels controls 'cntl' (only the sleuth metadata is rewritten to
+    # 'control'); matching 'control' alone silently dropped every control TPM column.
+    control_samples = metadata_df[metadata_df['condition'].isin(['cntl', 'control'])]['Sample name'].tolist()
     test_samples = metadata_df[metadata_df['condition'] == 'test']['Sample name'].tolist()
 
     # Merge the dataframes on the gene index
