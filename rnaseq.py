@@ -77,6 +77,34 @@ def sample_sort_key(name: str):
     n = int(m.group(1)) if m else 10**9
     return (re.sub(r"\d+", "", name), n, name)
 
+def ordered_sample_names(metadata):
+    """Controls first, then tests, each in the order of metadata.tsv's ``replicate_index``.
+
+    That index is what metadata.py baked into every sample_id (filename order), and
+    deseq2_metadata.tsv follows it, so DESeq2's counts columns must too. Sorting by the trailing
+    integer instead (sample_sort_key) picks up the lane in names like ``DDX5-2X-KO-1_L05`` and
+    put replicate 2 (lane 4) before replicate 1 (lane 5), which DESeq2 rejects. sample_sort_key
+    remains only as a fallback for metadata written before replicate_index existed.
+    """
+    cols = ["Sample name", "condition"]
+    has_index = "replicate_index" in metadata.columns
+    if has_index:
+        cols.append("replicate_index")
+    order = (
+        metadata[cols]
+        .drop_duplicates(subset=["Sample name"])
+        .assign(_group=lambda d: d["condition"].str.strip().str.lower()
+                .map(lambda x: 0 if x == "cntl" else 1))
+    )
+    if has_index:
+        order = order.sort_values(by=["_group", "replicate_index"], kind="stable")
+    else:
+        order = order.sort_values(
+            by=["_group", "Sample name"],
+            key=lambda s: s.map(sample_sort_key) if s.name == "Sample name" else s,
+        )
+    return order["Sample name"].tolist()
+
 def setup_logging(results_dir):
     log_file = stage_log_path(results_dir, "pipeline")
     sys.stdout = open(log_file, 'w')
@@ -2137,19 +2165,9 @@ def main():
     try:
         ctx = build_run_context(metadata, results_dir, manifest.run_id, species_name)
 
-        # Controls first, then tests, each in natural order. rMATS replicate indices and the
-        # GSEA class file both depend on this ordering.
-        meta_order = (
-            metadata[["Sample name", "condition"]]
-            .drop_duplicates()
-            .assign(_group=lambda d: d["condition"].str.strip().str.lower()
-                    .map(lambda x: 0 if x == "cntl" else 1))
-            .sort_values(
-                by=["_group", "Sample name"],
-                key=lambda s: s.map(sample_sort_key) if s.name == "Sample name" else s,
-            )
-        )
-        sample_names = meta_order["Sample name"].tolist()
+        # rMATS replicate indices, the GSEA class file and the DESeq2 counts matrix all depend
+        # on this ordering; see ordered_sample_names.
+        sample_names = ordered_sample_names(metadata)
         grouped_metadata = metadata.groupby('Sample name')
 
         stage = "per_sample_processing"
