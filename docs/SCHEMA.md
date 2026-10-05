@@ -429,4 +429,4 @@ Unused slots up to `coord_8` are `NA`. Only MXE uses all 8.
 
 `content` is one of `unique`, `uniquemulti`; `strand` is one of `plus`, `minus`, `unstranded`.
 
-STAR's `str1`/`str2` never reaches a filename: which one is the plus strand depends on the library chemistry, and the mapping is resolved once from the RSeQC call. Values are **positive on both strands**, unlike the pre-1.4 files, which stored minus-strand coverage as negative numbers. Tracks are CPM-normalized and the factor actually applied is recorded in `bigwig_manifest.tsv`; the manifest, not the filename, is authoritative.
+STAR's `str1`/`str2` never reaches a filename: which one is the plus strand depends on the library chemistry, and the mapping is resolved once from the RSeQC call. Minus-strand tracks hold **negative** values and plus/unstranded tracks positive ones; compare coverage between tracks by absolute value (`signal_over_gene` already does). Tracks are CPM-normalized and the (positive) factor applied is recorded in `bigwig_manifest.tsv`; the manifest, not the filename, is authoritative.
