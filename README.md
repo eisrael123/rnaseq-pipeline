@@ -408,9 +408,10 @@ never one column per sample. Missing values are the literal string `NA`. Every r
 - bigWigs are named `<sample_id>.<content>.<build>.<strand>.bw`. STAR's `str1`/`str2` no longer
   appears anywhere: which one is the plus strand depends on the library chemistry, so it is
   resolved from the RSeQC call and written into the filename and the manifest.
-- bigWig values are CPM-normalized and **positive on both strands**. Minus-strand tracks used to
-  hold negative values. Genome browser sessions that relied on the old sign will need their
-  track ranges adjusted.
+- bigWig values are CPM-normalized. Minus-strand tracks hold **negative** values (plus and
+  unstranded tracks are positive), so they mirror below the axis in a genome browser. To compare
+  coverage between genes or tracks, use the absolute value; `signal_over_gene` reports positive
+  magnitudes on every strand.
 - Output filenames are no longer rewritten after the fact. The four `rename_*` passes are gone,
   along with the naming inconsistencies they caused.
 

@@ -9,9 +9,10 @@ filename and the manifest. An undetermined library fails the run rather than gue
 
 *Normalization*: STAR is run with ``--outWigNorm None``, so raw tracks are not comparable
 between samples. Every track is scaled to CPM and the factor actually applied is recorded per
-file. Values stay positive: strand is carried by the filename and the manifest, so the legacy
-habit of negating the minus-strand track (which would make signal_over_gene sums negative) is
-gone.
+file. Minus-strand tracks hold negative values (the lab's genome-browser convention); plus and
+unstranded tracks are positive. Strand is also carried by the filename and the manifest.
+signal_over_gene flips the minus-strand sign back, so its coverage values are positive on both
+strands -- compare coverage between tracks by absolute value.
 """
 
 from __future__ import annotations
@@ -67,6 +68,11 @@ def scale_factor(library_size: int, normalization: str = DEFAULT_NORMALIZATION) 
     if library_size <= 0:
         raise BigWigError("library size is zero; cannot normalize to CPM")
     return 1e6 / library_size
+
+
+def strand_sign(strand: str) -> int:
+    """-1 for minus-strand tracks (stored negative), +1 for plus and unstranded."""
+    return -1 if strand == "minus" else 1
 
 
 def _rescale_wig(source: Path, target: Path, factor: float) -> None:
@@ -178,7 +184,8 @@ def convert_sample_bigwigs(ctx: RunContext, results_dir: Path, sample_name: str,
 
         factor = scale_factor(sizes[content], normalization)
         scaled_wig = wig.with_suffix(".normalized.wig")
-        _rescale_wig(wig, scaled_wig, factor)
+        # scale_factor in the manifest stays the (positive) CPM factor; the sign is the strand.
+        _rescale_wig(wig, scaled_wig, factor * strand_sign(strand))
 
         target = bigwig_dir / f"{sample_id}.{content}.{ctx.genome_build}.{strand}.bw"
         command = ["wigToBigWig", str(scaled_wig), str(chr_sizes), str(target)]
@@ -310,6 +317,10 @@ def write_signal_over_gene(ctx: RunContext, results_dir: Path, reference_dir: Pa
                     print(f"WARNING: bigWigAverageOverBed failed for {bigwig_path.name} / "
                           f"{feature_set}: {error}{detail}")
                     continue
+                # Minus-strand tracks are stored negative; report coverage as a positive
+                # magnitude on every strand (the most negative value is the peak).
+                if strand_sign(row["strand"]) < 0:
+                    raw = raw.assign(sum=-raw["sum"], max=-raw["min"])
                 # BED12 annotations are keyed by transcript; roll them up so the table is keyed
                 # by gene like every other table.
                 gene_ids = annotation.annotate_targets(raw["name"].astype(str))["gene_id"]

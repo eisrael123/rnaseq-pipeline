@@ -204,3 +204,46 @@ def test_unstranded_regeneration_keeps_wigs_when_star_fails(tmp_path, monkeypatc
     with pytest.raises(bigwig.BigWigError, match="regenerate"):
         bigwig.regenerate_unstranded_wigs(tmp_path, sample)
     assert original.read_text() == "old\n"
+
+
+def test_minus_strand_is_stored_negative():
+    assert bigwig.strand_sign("minus") == -1
+    assert bigwig.strand_sign("plus") == 1
+    assert bigwig.strand_sign("unstranded") == 1
+
+
+def test_wig_rescaling_with_negative_factor(tmp_path):
+    source = tmp_path / "in.wig"
+    source.write_text("variableStep chrom=chr1\n1\t10\n2\t20\n")
+    target = tmp_path / "out.wig"
+    bigwig._rescale_wig(source, target, -0.5)
+    assert target.read_text() == "variableStep chrom=chr1\n1\t-5\n2\t-10\n"
+
+
+def test_signal_over_gene_reports_minus_strand_as_positive_magnitude(tmp_path, monkeypatch):
+    """A minus track stored negative must give the same signal_over_gene values as its magnitude."""
+    from types import SimpleNamespace
+
+    def fake_average(bigwig_path, bed, output):
+        sign = -1 if ".minus." in bigwig_path.name else 1
+        lo, hi = sorted((sign * 1.0, sign * 9.0))
+        return pd.DataFrame([{"name": "GENE1", "size": 100, "covered": 50, "sum": sign * 400.0,
+                              "mean0": sign * 4.0, "mean": sign * 8.0, "min": lo, "max": hi}])
+
+    captured = {}
+    monkeypatch.setattr(bigwig.shutil, "which", lambda tool: "/usr/bin/" + tool)
+    monkeypatch.setattr(bigwig, "feature_bed_files", lambda ref, build: {"gene_body": tmp_path / "g.bed"})
+    monkeypatch.setattr(bigwig, "_bed_with_unique_names", lambda bed, out: bed)
+    monkeypatch.setattr(bigwig, "_average_over_bed", fake_average)
+    monkeypatch.setattr(bigwig, "write_table", lambda d, name, frame: captured.setdefault(name, frame))
+    ctx = SimpleNamespace(run_id="R1", genome_build="hg38")
+    annotation = SimpleNamespace(annotate_targets=lambda names: pd.DataFrame({"gene_id": names.values}))
+    rows = [{"content": "unique", "file_path": f"artifacts/bigwig/S1.unique.hg38.{s}.bw",
+             "sample_id": "S1", "strand": s} for s in ("plus", "minus")]
+    (tmp_path / "logs").mkdir()
+
+    n, status = bigwig.write_signal_over_gene(ctx, tmp_path, tmp_path, annotation, rows)
+    out = captured["signal_over_gene"].set_index("strand")
+    assert (n, status) == (2, "ok")
+    for col in ("sum_coverage", "max_coverage", "mean_coverage"):
+        assert out.loc["minus", col] == out.loc["plus", col] > 0
