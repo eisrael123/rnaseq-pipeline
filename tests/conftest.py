@@ -232,7 +232,7 @@ def _bigwig_rows(ctx: RunContext, results_dir: Path) -> list[dict]:
         sample_id = ctx.sample_id(sample_name)
         for content in ("unique", "uniquemulti"):
             for strand in ("plus", "minus"):
-                path = (results_dir / "artifacts" / "bigwig" /
+                path = (results_dir / "artifacts" / "bigwig" / content /
                         f"{sample_id}.{content}.{GENOME_BUILD}.{strand}.bw")
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(f"bigwig:{sample_id}:{content}:{strand}".encode())

@@ -1717,6 +1717,9 @@ def organize_artifacts(results_dir, sample_names):
         ("deseq2/*", artifacts / "deseq2"),
         ("sleuth/*", artifacts / "sleuth"),
         ("gsea/*", artifacts / "gsea"),
+        # The per-event-type JCEC results are the ones people open; keep them apart from the
+        # JC files and rMATS intermediates so the wrong file is hard to pick up.
+        ("rmats/rmats_out/*.MATS.JCEC.txt", artifacts / "rmats_raw" / "JCEC"),
         ("rmats/rmats_out/*", artifacts / "rmats_raw"),
         ("rmats/rmats_tmp", artifacts / "rmats_raw"),
         ("rmats/*.txt", artifacts / "rmats_raw"),
@@ -2242,6 +2245,7 @@ def main():
                 ctx, results_dir, sample_name, library_types[sample_name], chr_sizes,
                 normalization=args.normalization))
         bigwig.write_bigwig_manifest(results_dir, bigwig_rows)
+        bigwig.write_raw_count_manifest(ctx, results_dir, bigwig_rows)
         remove_wig(results_dir)
 
         stage = "signal_over_gene"
