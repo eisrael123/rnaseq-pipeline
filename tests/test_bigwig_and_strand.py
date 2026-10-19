@@ -91,8 +91,17 @@ def test_bigwig_manifest_matches_files(results_dir):
         assert sha256_file(path) == row.sha256
 
     on_disk = {p.relative_to(results_dir).as_posix()
-               for p in (results_dir / "artifacts" / "bigwig").glob("*.bw")}
+               for p in (results_dir / "artifacts" / "bigwig").rglob("*.bw")}
     assert on_disk == set(manifest["file_path"])
+
+
+def test_bigwig_tracks_are_split_by_content(results_dir):
+    """unique and uniquemulti tracks live in their own folders, never side by side."""
+    manifest = pd.read_csv(results_dir / get_table("bigwig_manifest").relpath, sep="\t")
+    assert set(manifest["content"]) == {"unique", "uniquemulti"}
+    for row in manifest.itertuples(index=False):
+        assert row.file_path.rsplit("/", 1)[0] == f"artifacts/bigwig/{row.content}"
+    assert not list((results_dir / "artifacts" / "bigwig").glob("*.bw"))
 
 
 def test_bigwig_filenames_carry_strand_and_content(results_dir):
@@ -247,3 +256,73 @@ def test_signal_over_gene_reports_minus_strand_as_positive_magnitude(tmp_path, m
     assert (n, status) == (2, "ok")
     for col in ("sum_coverage", "max_coverage", "mean_coverage"):
         assert out.loc["minus", col] == out.loc["plus", col] > 0
+
+
+def test_wig_rescaling_writes_raw_counts_in_the_same_pass(tmp_path):
+    """The raw copy is STAR's value with only the strand sign applied -- no scaling, no
+    rounding -- and keeps the declarations."""
+    source = tmp_path / "in.wig"
+    source.write_text("variableStep chrom=chr1\n1\t3\n2\t0.33333\n")
+    scaled, raw = tmp_path / "out.wig", tmp_path / "out.raw.wig"
+    bigwig._rescale_wig(source, scaled, -0.5, raw_target=raw, raw_sign=-1)
+    assert scaled.read_text() == "variableStep chrom=chr1\n1\t-1.5\n2\t-0.166665\n"
+    assert raw.read_text() == "variableStep chrom=chr1\n1\t-3\n2\t-0.33333\n"
+
+
+def test_raw_count_manifest_pairs_each_raw_track_with_its_cpm_track(tmp_path):
+    from outputs import RunContext
+    ctx = RunContext(run_id="R1", experiment_id="Cell_X_2026-01-01", results_dir=tmp_path,
+                     genome_build=GENOME_BUILD)
+    rows = [{"run_id": "R1", "sample_id": "S1", "content": content, "strand": "minus",
+             "genome_build": GENOME_BUILD, "scale_factor": 0.5,
+             "file_path": f"artifacts/bigwig/{content}/S1.{content}.{GENOME_BUILD}.minus.bw",
+             "raw_file_path": f"{content}/S1.{content}.{GENOME_BUILD}.minus.raw.bw",
+             "raw_sha256": "ab" * 32, "raw_bytes": 10}
+            for content in ("unique", "uniquemulti")]
+    path = bigwig.write_raw_count_manifest(ctx, tmp_path, rows)
+    assert path == tmp_path / "raw_count_bigwigs" / "raw_count_manifest.tsv"
+    manifest = pd.read_csv(path, sep="\t")
+    assert list(manifest.columns) == bigwig.RAW_COUNT_COLUMNS
+    assert list(manifest["file_path"]) == [r["raw_file_path"] for r in rows]
+    assert list(manifest["source_file"]) == [
+        f"pipeline_output/Cell_X_2026-01-01/{r['file_path']}" for r in rows]
+    assert list(manifest["values"]) == ["integer_reads", "fractional_reads"]
+    assert (manifest["max_rounding_residual"] == 0).all()
+    assert (manifest["ambiguous_positions"] == 0).all()
+
+
+@pytest.mark.skipif(not __import__("shutil").which("wigToBigWig"),
+                    reason="wigToBigWig not on PATH (runs inside the pipeline image)")
+def test_convert_sample_bigwigs_writes_split_cpm_and_raw_tracks(tmp_path, monkeypatch):
+    """End to end with the real wigToBigWig: CPM tracks under artifacts/bigwig/<content>/,
+    raw tracks under raw_count_bigwigs/<content>/, minus strand negative in both."""
+    pyBigWig = pytest.importorskip("pyBigWig")
+    from outputs import RunContext
+    sample = "S1"
+    star = tmp_path / "star" / sample
+    star.mkdir(parents=True)
+    (star / f"{sample}_Log.final.out").write_text(
+        "Uniquely mapped reads number |\t2000000\nNumber of reads mapped to multiple loci |\t0\n")
+    for label in ("Unique", "UniqueMultiple"):
+        for strand_label in ("str1", "str2"):
+            (star / f"{sample}_Signal.{label}.{strand_label}.out.wig").write_text(
+                "variableStep chrom=chr1\n1\t4\n2\t7\n")
+    sizes = tmp_path / "chrNameLength.txt"
+    sizes.write_text("chr1\t1000\n")
+    monkeypatch.setattr(strandedness, "star_strand_label",
+                        lambda lib, s: "plus" if s == "str1" else "minus")
+    ctx = RunContext(run_id="R1", experiment_id="Cell_X_2026-01-01", results_dir=tmp_path,
+                     genome_build=GENOME_BUILD, sample_ids={sample: "S1"})
+    rows = bigwig.convert_sample_bigwigs(ctx, tmp_path, sample, "stranded_reverse", sizes)
+    assert len(rows) == 4
+    for row in rows:
+        cpm_path = tmp_path / row["file_path"]
+        raw_path = tmp_path / "raw_count_bigwigs" / row["raw_file_path"]
+        assert row["file_path"].startswith(f"artifacts/bigwig/{row['content']}/")
+        assert row["raw_file_path"].startswith(f"{row['content']}/")
+        sign = -1 if row["strand"] == "minus" else 1
+        cpm = [v for _, _, v in pyBigWig.open(str(cpm_path)).intervals("chr1")]
+        raw = [v for _, _, v in pyBigWig.open(str(raw_path)).intervals("chr1")]
+        assert raw == [4 * sign, 7 * sign]
+        assert cpm == pytest.approx([4 * sign * 0.5, 7 * sign * 0.5])
+    assert not list((tmp_path / "star" / sample).glob("*.raw.wig"))

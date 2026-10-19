@@ -29,11 +29,14 @@ Pipeline version `1.4.0`.
 ├── tables/
 ├── artifacts/
 │   ├── bigwig/
+│   ├── bigwig/unique/
+│   ├── bigwig/uniquemulti/
 │   ├── bam/
 │   ├── star_logs/
 │   ├── junction_bed/
 │   ├── kallisto/
 │   ├── rmats_raw/
+│   ├── rmats_raw/JCEC/
 │   ├── deseq2/
 │   ├── sleuth/
 │   ├── gsea/
