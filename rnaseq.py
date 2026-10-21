@@ -750,6 +750,15 @@ def create_gsea_cls_file(metadata, results_dir, species_name):
         print(f"Error saving GSEA class file '{gsea_cls_file}': {e}")
         sys.exit(1)
 
+def gsea_gmt_files(gmt_dir):
+    """Every gene set collection in the reference GSEA folder, as the original pipeline ran.
+
+    This includes the full ``gene_ontology`` GMT. It is not redundant with the
+    biological_process and molecular_function files: it is the only one that carries the
+    cellular-component sets.
+    """
+    return sorted(Path(gmt_dir).glob("*.gmt"))
+
 def run_gsea(results_dir, gsea_dir_name, species_name):
     """Run GSEA for each .gmt file in the referenceFiles/{species}/GSEA directory."""
 
@@ -765,17 +774,7 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
     if not gsea_cli_path:
         raise FileNotFoundError("Neither gsea-cli nor gsea-cli.sh was found in PATH.")
 
-    gmt_files = sorted(gsea_reference_dir.glob("*.gmt"))
-    stems = {p.stem.lower() for p in gmt_files}
-    # MSigDB ships GO both as the full C5 collection and as BP/MF/CC splits. The reference
-    # tree has gene_ontology plus biological_process and molecular_function; the full set is
-    # redundant, much larger, and is what OOM'd / crashed the smoke run after the splits had
-    # already succeeded. Skip it when the splits are present.
-    skip_full_go = (
-        any(s.startswith("gene_ontology") for s in stems)
-        and any(s.startswith("biological_process") for s in stems)
-        and any(s.startswith("molecular_function") for s in stems)
-    )
+    gmt_files = gsea_gmt_files(gsea_reference_dir)
 
     # GSEA is a fat Java process; conda's default heap is too small for the largest GMTs.
     env = os.environ.copy()
@@ -783,10 +782,6 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
         env["JAVA_TOOL_OPTIONS"] = "-Xmx16g"
 
     for gmt_file in gmt_files:
-        if skip_full_go and gmt_file.stem.lower().startswith("gene_ontology"):
-            print(f"Skipping {gmt_file.name}: covered by biological_process + "
-                  f"molecular_function collections already in this reference set.")
-            continue
         rpt_label = gmt_file.stem
         command = [
             gsea_cli_path, "GSEA",
@@ -1993,17 +1988,7 @@ def run_enrichment(metadata, results_dir, species_name):
     Returns the mode used so the manifest records which flavour of GSEA produced
     gene_set_enrichment.tsv.
     """
-    gmt_dir = REFERENCE_DIR / species_name / "GSEA"
-    gmt_files = sorted(gmt_dir.glob("*.gmt"))
-    stems = {p.stem.lower() for p in gmt_files}
-    skip_full_go = (
-        any(s.startswith("gene_ontology") for s in stems)
-        and any(s.startswith("biological_process") for s in stems)
-        and any(s.startswith("molecular_function") for s in stems)
-    )
-    if skip_full_go:
-        gmt_files = [p for p in gmt_files
-                     if not p.stem.lower().startswith("gene_ontology")]
+    gmt_files = gsea_gmt_files(REFERENCE_DIR / species_name / "GSEA")
 
     condition_counts = metadata.groupby('condition')['Sample name'].nunique()
     if (condition_counts < 3).any():
