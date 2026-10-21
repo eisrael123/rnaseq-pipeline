@@ -125,3 +125,47 @@ def test_prefixing_is_idempotent(tmp_path):
     before = sorted(p.relative_to(results_dir) for p in results_dir.rglob("*"))
     rnaseq.prefix_experiment_name(results_dir, EXPERIMENT)
     assert sorted(p.relative_to(results_dir) for p in results_dir.rglob("*")) == before
+
+
+HUMAN_READABLE_STEPS = (
+    "collate_tpms", "merge_deseq2_results", "reform_deseq2_results", "collate_transcript_tpms",
+    "merge_sleuth_wald_results", "merge_sleuth_lrt_results", "reformat_sleuth_results",
+    "check_mycoplasma_sequences", "order_mycoplasma_report", "prepare_volcano",
+    "convert_SJtab_to_bed", "report_top_genes_and_transcripts", "report_top_gene_tpms",
+    "summarize_alignments", "summarize_transcript_coverage", "generate_results_html",
+)
+
+
+def test_a_failed_researcher_output_is_returned_as_an_error(tmp_path, monkeypatch):
+    """F6: the run carries on past a failed volcano plot, but the failure comes back to main()
+    to be recorded, rather than ending as a WARNING line in pipeline.log."""
+    for name in HUMAN_READABLE_STEPS:
+        monkeypatch.setattr(rnaseq, name, lambda *args: None)
+    monkeypatch.setattr(rnaseq.tables_de, "write_de_gene_xlsx", lambda *args: None)
+
+    def broken_volcano(results_dir):
+        raise RuntimeError("volcano.py exited 1")
+    monkeypatch.setattr(rnaseq, "prepare_volcano", broken_volcano)
+
+    later_steps_ran = []
+    monkeypatch.setattr(rnaseq, "generate_results_html",
+                        lambda *args: later_steps_ran.append("report"))
+    errors = rnaseq.write_human_readable_outputs(
+        tmp_path / "metadata.tsv", tmp_path, [SAMPLE], "hg38")
+    assert errors == ["volcano plot: RuntimeError: volcano.py exited 1"]
+    assert later_steps_ran == ["report"]
+
+
+def test_output_errors_are_written_to_the_error_log(tmp_path):
+    rnaseq.record_output_errors(tmp_path, ["volcano plot: RuntimeError: boom",
+                                           "GSEA gene_ontology.gmt: gsea-cli failed"])
+    lines = (tmp_path / "logs" / "errors.log").read_text().splitlines()
+    assert [line.split("\t", 1)[1] for line in lines] == [
+        "output\tvolcano plot: RuntimeError: boom",
+        "output\tGSEA gene_ontology.gmt: gsea-cli failed",
+    ]
+
+
+def test_no_output_errors_writes_no_error_log(tmp_path):
+    rnaseq.record_output_errors(tmp_path, [])
+    assert not (tmp_path / "logs").exists()

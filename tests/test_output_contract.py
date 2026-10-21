@@ -107,3 +107,23 @@ def test_missing_values_are_na_not_blank(results_dir):
     assert "\tNA" in text
     for line in text.strip().split("\n"):
         assert "\t\t" not in line, "an empty cell escaped the NA convention"
+
+
+def test_validator_fails_when_a_researcher_file_is_missing(results_dir):
+    """F6: the tables can be complete while the volcano plot or report is missing; that used to
+    pass validation."""
+    next((results_dir / "reports").glob("*volcano_plot.png")).unlink()
+    failures = validate_outputs.validate(results_dir).failures
+    assert failures == ["no file matching reports/*volcano_plot.png"]
+
+
+def test_validator_fails_on_recorded_output_errors(results_dir):
+    """F6: a failure the run recorded in output_errors fails validation, even though the run
+    finished and the file may exist from an earlier attempt."""
+    path = results_dir / "run_manifest.json"
+    manifest = json.loads(path.read_text())
+    manifest["output_errors"] = ["volcano plot: CalledProcessError: exit status 1"]
+    path.write_text(json.dumps(manifest))
+    failures = validate_outputs.validate(results_dir).failures
+    assert failures == ["researcher-facing output failed during the run: "
+                        "volcano plot: CalledProcessError: exit status 1"]

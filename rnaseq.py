@@ -781,6 +781,7 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
     if "GSEA_JVM_HEAP" not in env and "JAVA_TOOL_OPTIONS" not in env:
         env["JAVA_TOOL_OPTIONS"] = "-Xmx16g"
 
+    failed = []
     for gmt_file in gmt_files:
         rpt_label = gmt_file.stem
         command = [
@@ -806,6 +807,8 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
                 print(e.stderr[-2000:])
             if e.stdout:
                 print(e.stdout[-1000:])
+            failed.append(gmt_file.name)
+    return failed
 
 def create_rnk_file(results_dir):
     """
@@ -2029,8 +2032,8 @@ def order_mycoplasma_report(results_dir, sample_names):
 def run_enrichment(metadata, results_dir, species_name):
     """Run GSEA, pre-ranked when a condition has fewer than three replicates.
 
-    Returns the mode used so the manifest records which flavour of GSEA produced
-    gene_set_enrichment.tsv.
+    Returns the mode used, so the manifest records which flavour of GSEA produced
+    gene_set_enrichment.tsv, and the GMT files GSEA failed on.
     """
     gmt_files = gsea_gmt_files(REFERENCE_DIR / species_name / "GSEA")
 
@@ -2042,15 +2045,15 @@ def run_enrichment(metadata, results_dir, species_name):
         if not rnk_file:
             raise RuntimeError("unable to create the .rnk file for GSEA pre-ranked analysis")
         gsea_results_dir = results_dir / "gsea"
-        for gmt_file in gmt_files:
-            run_gsea_preranked(rnk_file, gsea_results_dir, gmt_file)
+        failed = [gmt_file.name for gmt_file in gmt_files
+                  if not run_gsea_preranked(rnk_file, gsea_results_dir, gmt_file)]
         mode = "preranked"
     else:
         print("3 or more replicates detected for all conditions. Running standard GSEA "
               "workflow.")
         create_gsea_input_file(metadata, results_dir, species_name)
         create_gsea_cls_file(metadata, results_dir, species_name)
-        run_gsea(results_dir, "gsea", species_name)
+        failed = run_gsea(results_dir, "gsea", species_name)
         mode = "standard"
 
     # GSEA creates an empty mmmDD directory in the working directory on some runs.
@@ -2059,20 +2062,44 @@ def run_enrichment(metadata, results_dir, species_name):
     if month_day_folder.is_dir() and not any(month_day_folder.iterdir()):
         shutil.rmtree(month_day_folder)
         print(f"Removed empty GSEA folder: {month_day_folder}")
-    return mode
+    return mode, failed
 
+
+def record_output_errors(results_dir, errors):
+    """Make researcher-facing output failures impossible to miss.
+
+    The run still finishes, so the tables and every output that did work are kept, but each
+    failure goes to logs/errors.log and to the terminal, and main() records them in the
+    manifest's ``output_errors``, which fails validation. The original pipeline stopped at the
+    first such failure; before this change they were a WARNING line in pipeline.log.
+    """
+    if not errors:
+        return
+    with open(stage_log_path(results_dir, "errors"), "a") as log:
+        for error in errors:
+            log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\toutput\t{error}\n")
+    banner = (f"\nERROR: {len(errors)} researcher-facing output(s) failed and are missing or "
+              f"incomplete:\n" + "".join(f"  - {error}\n" for error in errors) +
+              f"See {stage_log_path(results_dir, 'errors')}.\n")
+    print(banner)
+    # stdout is redirected to logs/pipeline.log; say it where the person running it will see.
+    if sys.__stderr__ is not None and sys.stdout is not sys.__stdout__:
+        sys.__stderr__.write(banner)
 
 def write_human_readable_outputs(metadata_file, results_dir, sample_names, species_name):
     """Figures, spreadsheets and the HTML report.
 
-    These are conveniences layered on top of the contract tables, so a failure here is reported
-    but does not discard a completed run's results.
+    A failure here does not stop the run, but it is returned so main() can report it as an
+    error (see record_output_errors).
     """
+    errors = []
+
     def optional(label, function, *arguments):
         try:
             function(*arguments)
-        except Exception as error:  # noqa: BLE001 - cosmetic outputs must not abort the run
-            print(f"WARNING: {label} failed: {type(error).__name__}: {error}")
+        except Exception as error:  # noqa: BLE001 - one bad output must not discard the rest
+            print(f"ERROR: {label} failed: {type(error).__name__}: {error}")
+            errors.append(f"{label}: {type(error).__name__}: {error}")
 
     collate_tpms(results_dir, sample_names, species_name)
     optional("DESeq2 wide merge", merge_deseq2_results, results_dir)
@@ -2097,6 +2124,7 @@ def write_human_readable_outputs(metadata_file, results_dir, sample_names, speci
     optional("transcript coverage summary", summarize_transcript_coverage, results_dir,
              sample_names, species_name)
     optional("HTML report", generate_results_html, results_dir, sample_names)
+    return errors
 
 
 def parse_cli(argv):
@@ -2253,7 +2281,9 @@ def main():
         manifest.record_stage("sleuth", status)
 
         stage = "gsea"
-        manifest.record_stage("gsea_mode", run_enrichment(metadata, results_dir, species_name))
+        gsea_mode, gsea_failed = run_enrichment(metadata, results_dir, species_name)
+        manifest.record_stage("gsea_mode", gsea_mode)
+        output_errors = [f"GSEA {name}: gsea-cli failed" for name in gsea_failed]
         rows, status = tables_gsea.write_gene_set_enrichment(ctx, results_dir)
         manifest.record_stage("gene_set_enrichment_rows", rows)
         manifest.record_stage("gsea", status)
@@ -2293,7 +2323,10 @@ def main():
             results_dir, organism, library_type, annotation))
 
         stage = "human_readable_outputs"
-        write_human_readable_outputs(metadata_file, results_dir, sample_names, species_name)
+        output_errors += write_human_readable_outputs(
+            metadata_file, results_dir, sample_names, species_name)
+        if output_errors:
+            manifest.set("output_errors", output_errors)
 
         stage = "organize"
         log_total_time(start_time, results_dir)
@@ -2322,7 +2355,11 @@ def main():
     manifest.set("validation", "pass" if report.ok else "fail")
     manifest.write("success")
 
-    print("RNA-seq pipeline completed successfully.")
+    record_output_errors(results_dir, output_errors)
+    if output_errors:
+        print("RNA-seq pipeline completed WITH ERRORS; see above.")
+    else:
+        print("RNA-seq pipeline completed successfully.")
     if not report.ok:
         sys.exit(1)
 

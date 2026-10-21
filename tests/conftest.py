@@ -323,6 +323,12 @@ def built_results(tmp_path_factory) -> dict:
         if source.is_dir():
             source.rename(results_dir / "artifacts" / source.name)
 
+    # The researcher-facing files the validator requires; their content is not checked.
+    (results_dir / "artifacts" / "deseq2" / f"{EXPERIMENT_ID}_deseq2_results_genes.xlsx"
+     ).write_bytes(b"xlsx")
+    for name in (f"{EXPERIMENT_ID}_test_vs_cntl_volcano_plot.png", "report.html"):
+        (results_dir / "reports" / name).write_bytes(b"report")
+
     checksums.write_checksums(results_dir,
                               known={row["file_path"]: row["sha256"] for row in bigwig_rows})
     build_manifest(results_dir)
