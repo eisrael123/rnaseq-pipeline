@@ -431,9 +431,38 @@ never one column per sample. Missing values are the literal string `NA`. Every r
   `cpm_bigwigs/cpm_manifest.tsv`. `signal_over_gene` is computed from the CPM copies.
 - bigWigs are split by content into `artifacts/bigwig/unique/` and
   `artifacts/bigwig/uniquemulti/`, as the original `1_unique/` and `2_unique_multiple/` were.
-- rMATS's five `*.MATS.JCEC.txt` files are in `artifacts/rmats_raw/JCEC/`.
-- Output filenames are no longer rewritten after the fact. The four `rename_*` passes are gone,
-  along with the naming inconsistencies they caused.
+- Unstranded libraries get one `unstranded` bigWig per content type, rebuilt from the BAM,
+  instead of the original's two positive `str1`/`str2` tracks. Each holds all of the sample's
+  reads.
+- rMATS's five `*.MATS.JCEC.txt` files and `summary.txt` are in `artifacts/rmats_raw/JCEC/`, as
+  in the original `1_JCEC/`; the JC files and intermediates are in `artifacts/rmats_raw/`.
+- Files people open carry the experiment name, as the original's rename passes gave them:
+  `<experiment>_test_vs_cntl_` on figures and the JCEC files, `<experiment>_deseq2_` and
+  `<experiment>_sleuth_` on DESeq2 and Sleuth output (except `deseq2_metadata.tsv`), and
+  `<experiment>_de_gene.xlsx`. The summary tables and `report.html` are unprefixed, as before.
+  Runs made between the refactor and October 2026 have unprefixed names.
+- The DESeq2 and Sleuth XLSX files are at the top of `artifacts/deseq2/` and
+  `artifacts/sleuth/`; everything else those tools wrote is in `prep_files/` below them.
+- kallisto output is in `artifacts/kallisto/<sample>/`. Runs made between the refactor and
+  October 2026 have it one level deeper, in `artifacts/kallisto/kallisto/<sample>/`.
+- GSEA runs every gene set collection in the reference folder, as the original did, including
+  the full `gene_ontology` GMT, the only one with the cellular-component sets. Runs made
+  between commit 9ea83ea (July 2026) and October 2026 skipped it.
+- `results.html` is now `reports/report.html`. Its strandedness row uses the original words
+  with the canonical name alongside: `rf-stranded (fr-firststrand)`,
+  `fr-stranded (fr-secondstrand)`, `unstranded`.
+- If RSeQC cannot determine a sample's strandedness, the sample is analysed as unstranded, as
+  in the original, and the run says so: a warning on the terminal and in the log, a note in the
+  RSeQC file, `strandedness_fallback` in the manifest, and a label in `report.html`.
+  `metadata.tsv` keeps the measured value, `undetermined`.
+- kallisto runs in Docker use an index rebuilt in April 2026 with kallisto 0.52.0. Runs on
+  macOS use the original (`*_ORIGINAL.kallisto.idx`). The two can give slightly different
+  abundances, so the manifest records the index path and SHA-256 under
+  `parameters.kallisto_index`.
+- If a spreadsheet, figure, junction BED, `report.html` or GSEA collection fails, the run still
+  finishes, but the failure is an error: it is printed on the terminal, written to
+  `logs/errors.log`, recorded in the manifest's `output_errors`, and fails validation, so the
+  run exits non-zero. The original pipeline stopped at the first such failure.
 
 ## Validating a run
 
@@ -446,8 +475,9 @@ python rnaseq_helper_scripts/validate_outputs.py /data/output
 
 It fails on a missing or incomplete manifest, a table whose columns do not match the schema, a
 `sample_id` that is not in `metadata.tsv`, a gene ID that is neither an unversioned Ensembl
-accession nor a listed exception, a splicing replicate with no parent event, and any checksum
-that no longer matches. Legitimate non-Ensembl IDs — ERCC spike-ins, EBV and KSHV loci — belong
+accession nor a listed exception, a splicing replicate with no parent event, any checksum
+that no longer matches, a researcher-facing output the run recorded as failed
+(`output_errors`), and a missing DESeq2 XLSX, volcano plot or `report.html`. Legitimate non-Ensembl IDs — ERCC spike-ins, EBV and KSHV loci — belong
 in `docs/gene_id_exceptions.txt`.
 
 ## Development
