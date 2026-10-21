@@ -1720,6 +1720,8 @@ def organize_artifacts(results_dir, sample_names):
         # The per-event-type JCEC results are the ones people open; keep them apart from the
         # JC files and rMATS intermediates so the wrong file is hard to pick up.
         ("rmats/rmats_out/*.MATS.JCEC.txt", artifacts / "rmats_raw" / "JCEC"),
+        # summary.txt counts the events in those files; the original 1_JCEC folder held it too.
+        ("rmats/rmats_out/summary.txt", artifacts / "rmats_raw" / "JCEC"),
         ("rmats/rmats_out/*", artifacts / "rmats_raw"),
         ("rmats/rmats_tmp", artifacts / "rmats_raw"),
         ("rmats/*.txt", artifacts / "rmats_raw"),
