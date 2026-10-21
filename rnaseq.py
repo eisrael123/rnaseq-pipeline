@@ -1057,7 +1057,9 @@ def generate_splicing_bar_chart(results_dir):
     Parameters:
     - results_dir (str or Path): The directory where the results are stored.
     """
-    import matplotlib.pyplot as plt  # only needed here; keeps the module importable in CI
+    # Only needed here; importing them inside keeps the module importable in CI.
+    import matplotlib.pyplot as plt
+    from matplotlib import rcParams
 
     rmats_out_dir = Path(results_dir) / "rmats" / "rmats_out"
 

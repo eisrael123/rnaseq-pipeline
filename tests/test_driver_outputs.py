@@ -242,3 +242,17 @@ def test_manifest_records_which_kallisto_index_was_used(tmp_path, monkeypatch):
     assert rnaseq.kallisto_index_path("hg38") == index_dir / "hg38_ORIGINAL.kallisto.idx"
     assert rnaseq.kallisto_index_path("hg38", is_contaminant_run=True) == \
         index_dir / "all_contaminants_ORIGINAL.kallisto.idx"
+
+
+def test_splicing_bar_chart_draws(tmp_path):
+    """I1 moved the matplotlib imports into this function; draw it once where matplotlib is
+    installed (the pipeline image) so a missing name cannot slip through again."""
+    pytest = __import__("pytest")
+    pytest.importorskip("matplotlib")
+    rmats_out = tmp_path / "rmats" / "rmats_out"
+    rmats_out.mkdir(parents=True)
+    for event in RMATS_EVENTS:
+        (rmats_out / f"{event}.MATS.JCEC.txt").write_text(
+            "FDR\tIncLevelDifference\n0.001\t0.3\n0.001\t-0.2\n0.5\t0.1\n")
+    rnaseq.generate_splicing_bar_chart(tmp_path)
+    assert sorted(path.name for path in rmats_out.glob("*.png"))
