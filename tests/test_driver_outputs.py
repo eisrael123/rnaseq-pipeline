@@ -201,6 +201,12 @@ def test_undetermined_strandedness_is_analysed_as_unstranded(tmp_path, monkeypat
     assert rnaseq.strandedness_label(record).startswith("unstranded (RSeQC could not")
 
 
-def test_report_labels_classified_libraries_plainly():
-    assert rnaseq.strandedness_label(UNCLASSIFIABLE_RSEQC.replace("0.9100", "0.0100").replace(
-        "0.0500", "0.4900").replace("0.0400", "0.5000")) == "unstranded"
+def test_report_uses_the_original_strandedness_words():
+    """F7: the original report said rf-stranded / fr-stranded / unstranded. The canonical names
+    ride along in brackets; fr-firststrand alone is easily misread as the old fr-stranded."""
+    def rseqc(forward, reverse):
+        return (UNCLASSIFIABLE_RSEQC.replace("0.9100", "0.0100")
+                .replace("0.0500", forward).replace("0.0400", reverse))
+    assert rnaseq.strandedness_label(rseqc("0.0300", "0.9600")) == "rf-stranded (fr-firststrand)"
+    assert rnaseq.strandedness_label(rseqc("0.9600", "0.0300")) == "fr-stranded (fr-secondstrand)"
+    assert rnaseq.strandedness_label(rseqc("0.4900", "0.5000")) == "unstranded"

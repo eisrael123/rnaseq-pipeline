@@ -1537,12 +1537,21 @@ def summarize_transcript_coverage(results_dir, sample_names, species_name):
             else:
                 print(f"Warning: {run_info_file} does not exist")
 
+# report.html keeps the original pipeline's words, which people know, with the canonical name
+# alongside. "fr-firststrand" on its own reads too much like the old "fr-stranded", which meant
+# the opposite chemistry.
+REPORT_STRANDEDNESS_LABELS = {
+    strandedness_module.FR_FIRSTSTRAND: "rf-stranded (fr-firststrand)",
+    strandedness_module.FR_SECONDSTRAND: "fr-stranded (fr-secondstrand)",
+    strandedness_module.UNSTRANDED: "unstranded",
+    strandedness_module.UNDETERMINED:
+        "unstranded (RSeQC could not determine; analysed as unstranded)",
+}
+
 def strandedness_label(rseqc_text):
     """How report.html describes a sample's strandedness."""
     measured = strandedness_module.parse_rseqc(rseqc_text)["library_type"]
-    if measured == strandedness_module.UNDETERMINED:
-        return "unstranded (RSeQC could not determine; analysed as unstranded)"
-    return measured
+    return REPORT_STRANDEDNESS_LABELS[measured]
 
 def generate_results_html(results_dir, sample_names):
     results_file = results_dir / "reports" / "report.html"
