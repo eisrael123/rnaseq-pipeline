@@ -14,13 +14,9 @@ import pandas as pd
 import sys
 import resource
 import time
-soft, hard = 10000, 10000
-resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
 import shutil
 import tempfile
 import json
-import matplotlib.pyplot as plt
-from matplotlib import rcParams
 import re
 import argparse
 
@@ -61,15 +57,22 @@ KALLISTO_COMMON_ARGS = ["-b", "100", "-t", "10"]
 RMATS_COMMON_ARGS = ["--variable-read-length", "--nthread", "10"]
 DESEQ2_ALPHA = 0.05
 
-# Check if running in the right conda env
-conda_env = os.environ.get("CONDA_DEFAULT_ENV")
-if conda_env != REQUIRED_ENV:
-    sys.stderr.write(
-        f"\nERROR: This script must be run inside the '{REQUIRED_ENV}' conda environment.\n"
-        f"Currently active environment: {conda_env or 'None'}\n"
-        f"Please run:\n\n    conda activate {REQUIRED_ENV}\n\n"
-    )
-    sys.exit(1)
+def check_environment():
+    """Refuse to run outside the pipeline's conda env, and raise the open-file limit.
+
+    Called from main() rather than at import time, so the tests can import this module without
+    the bioinformatics stack.
+    """
+    conda_env = os.environ.get("CONDA_DEFAULT_ENV")
+    if conda_env != REQUIRED_ENV:
+        sys.stderr.write(
+            f"\nERROR: This script must be run inside the '{REQUIRED_ENV}' conda environment.\n"
+            f"Currently active environment: {conda_env or 'None'}\n"
+            f"Please run:\n\n    conda activate {REQUIRED_ENV}\n\n"
+        )
+        sys.exit(1)
+    soft, hard = 10000, 10000
+    resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
 
 def sample_sort_key(name: str):
     # natural sort on trailing integer if present
@@ -1034,6 +1037,8 @@ def generate_splicing_bar_chart(results_dir):
     Parameters:
     - results_dir (str or Path): The directory where the results are stored.
     """
+    import matplotlib.pyplot as plt  # only needed here; keeps the module importable in CI
+
     rmats_out_dir = Path(results_dir) / "rmats" / "rmats_out"
 
     # Load data
@@ -2106,6 +2111,7 @@ def build_run_context(metadata, results_dir, run_id, genome_build):
 def main():
     """Run every stage, then emit the tables, checksums, manifest and validation result."""
     args = parse_cli(sys.argv[1:])
+    check_environment()
 
     global REFERENCE_DIR, scripts, results_dir, species_name
 

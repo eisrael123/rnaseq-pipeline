@@ -16,6 +16,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "rnaseq_helper_scripts"))
+sys.path.insert(0, str(REPO_ROOT))  # rnaseq.py, for tests of the driver's own functions
 
 import checksums  # noqa: E402
 import tables_de  # noqa: E402
