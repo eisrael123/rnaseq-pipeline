@@ -35,7 +35,7 @@ import tables_qc
 import tables_rmats
 import validate_outputs
 from annotation import Annotation
-from outputs import RunContext, create_layout, stage_log_path
+from outputs import RunContext, create_layout, sha256_file, stage_log_path
 from schemas import PIPELINE_VERSION
 
 REQUIRED_ENV = "rnaseqpipeline"
@@ -272,6 +272,28 @@ def infer_strandedness(sorted_bam, species, results_dir):
                f"kallisto and rMATS unstranded). See {output_file}.")
     return analysed
 
+def kallisto_index_path(species_name, is_contaminant_run=False):
+    """The kallisto index for the species or the contaminant panel.
+
+    On macOS (local runs) this is the ORIGINAL index the pre-container pipeline used; in Docker
+    it is the index rebuilt in April 2026, so the two can give slightly different abundances.
+    The manifest records which one a run used (kallisto_index_record).
+    """
+    stem = "all_contaminants" if is_contaminant_run else species_name
+    if platform.system() == "Darwin":
+        stem += "_ORIGINAL"
+    return REFERENCE_DIR / species_name / "kallisto" / f"{stem}.kallisto.idx"
+
+def kallisto_index_record(species_name):
+    """Path and SHA-256 of each kallisto index, for the manifest. Reads every index once
+    (a few GB), which is small next to the run itself."""
+    record = {}
+    for label, contaminants in (("species", False), ("contaminants", True)):
+        path = kallisto_index_path(species_name, contaminants)
+        record[label] = {"path": str(path),
+                         "sha256": sha256_file(path) if path.is_file() else "missing"}
+    return record
+
 def run_kallisto(fastq1, fastq2, sample_name, species_name, strandedness, results_dir, is_contaminant_run=False):
     """Run kallisto quant to measure abundance for species or contaminants."""
     # Set the correct output subdirectory with sampleName prefix
@@ -279,22 +301,9 @@ def run_kallisto(fastq1, fastq2, sample_name, species_name, strandedness, result
     kallisto_dir = results_dir / "kallisto" / sample_name / output_subdir
     kallisto_dir.mkdir(parents=True, exist_ok=True)
 
-    # Use the appropriate kallisto index based on species or contaminants.
-    # On macOS (local runs), use the ORIGINAL idx that was built. On Docker, use the new idx.
-    if is_contaminant_run:
-        if platform.system() == "Darwin": #Mac
-            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / "all_contaminants_ORIGINAL.kallisto.idx"
-            print(f"Kallisto contaminants: using index {kallisto_index}")
-        else: #Docker
-            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / "all_contaminants.kallisto.idx"
-            print(f"Kallisto contaminants: using index {kallisto_index}")
-    else:
-        if platform.system() == "Darwin": #Mac
-            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / f"{species_name}_ORIGINAL.kallisto.idx"
-            print(f"Kallisto species: using index {kallisto_index}")
-        else: #Docker
-            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / f"{species_name}.kallisto.idx"
-            print(f"Kallisto species: using index {kallisto_index}")
+    kallisto_index = kallisto_index_path(species_name, is_contaminant_run)
+    print(f"Kallisto {'contaminants' if is_contaminant_run else 'species'}: using index "
+          f"{kallisto_index}")
 
     stranded_option = strandedness_module.kallisto_option(strandedness)
 
@@ -2251,6 +2260,7 @@ def main():
         annotation_version_override=args.annotation_version,
     )
     manifest.set("gene_id_source", annotation.source)
+    manifest.data["parameters"]["kallisto_index"] = kallisto_index_record(species_name)
     print(f"run_id: {manifest.run_id}")
 
     stage = "startup"

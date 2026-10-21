@@ -220,3 +220,25 @@ def test_manifest_deseq2_alpha_matches_what_r_uses():
     assert "res <- results(dds)\n" in script
     assert "alpha" not in script
     assert rnaseq.DESEQ2_ALPHA == 0.1
+
+
+def test_manifest_records_which_kallisto_index_was_used(tmp_path, monkeypatch):
+    """F10: local (macOS) runs use the pre-container ORIGINAL index and Docker runs the one
+    rebuilt in April 2026. Abundances can differ slightly between the two, so the manifest
+    names the index and its checksum."""
+    monkeypatch.setattr(rnaseq, "REFERENCE_DIR", tmp_path, raising=False)
+    index_dir = tmp_path / "hg38" / "kallisto"
+    index_dir.mkdir(parents=True)
+    (index_dir / "hg38.kallisto.idx").write_bytes(b"rebuilt index")
+
+    monkeypatch.setattr(rnaseq.platform, "system", lambda: "Linux")
+    record = rnaseq.kallisto_index_record("hg38")
+    assert record["species"] == {"path": str(index_dir / "hg38.kallisto.idx"),
+                                 "sha256": rnaseq.sha256_file(index_dir / "hg38.kallisto.idx")}
+    assert record["contaminants"] == {
+        "path": str(index_dir / "all_contaminants.kallisto.idx"), "sha256": "missing"}
+
+    monkeypatch.setattr(rnaseq.platform, "system", lambda: "Darwin")
+    assert rnaseq.kallisto_index_path("hg38") == index_dir / "hg38_ORIGINAL.kallisto.idx"
+    assert rnaseq.kallisto_index_path("hg38", is_contaminant_run=True) == \
+        index_dir / "all_contaminants_ORIGINAL.kallisto.idx"
