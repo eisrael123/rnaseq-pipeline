@@ -1669,13 +1669,13 @@ def generate_results_html(results_dir, sample_names):
     with open(results_file, 'w') as f:
         f.write(html_content)
 
-def organize_artifacts(results_dir, sample_names):
-    """Move raw tool output under artifacts/ and reports under reports/.
+def organize_artifacts(results_dir, sample_names, experiment_id):
+    """Move raw tool output under artifacts/ and reports under reports/, then put the
+    experiment name on the files people open (prefix_experiment_name).
 
-    Replaces the old 1_Preprocessing/2_Analysis/3_Results tree and the four post-hoc renaming
-    passes. Filenames here are cosmetic: tables/ is the contract surface and the manifests are
-    authoritative, so nothing downstream parses these paths. Raw rMATS and STAR output is moved,
-    never deleted.
+    Replaces the old 1_Preprocessing/2_Analysis/3_Results tree. Filenames here are for people:
+    tables/ is the contract surface and the manifests are authoritative, so nothing downstream
+    parses these paths. Raw rMATS and STAR output is moved, never deleted.
     """
     results_dir = Path(results_dir)
     artifacts = results_dir / "artifacts"
@@ -1737,6 +1737,7 @@ def organize_artifacts(results_dir, sample_names):
                  "Rplots.pdf"):
         move_into(results_dir / name, results_dir / "reports")
     move_glob("*.png", results_dir / "reports")
+    prefix_experiment_name(results_dir, experiment_id)
 
     # Everything worth keeping has been moved; what is left is scratch.
     for scratch in ("star", "deseq2", "sleuth", "gsea", "rmats"):
@@ -1749,6 +1750,43 @@ def organize_artifacts(results_dir, sample_names):
     # a good analysis over desktop detritus.
     for junk in results_dir.rglob(".DS_Store"):
         junk.unlink(missing_ok=True)
+
+def prefix_experiment_name(results_dir, experiment_id):
+    """Put the experiment name in front of the files people open and share, as the original
+    pipeline's rename passes did, so a copied-out file still says where it came from and two
+    experiments' spreadsheets can be open in Excel at once.
+
+    Same names as the original: figures and the rMATS JCEC results get
+    ``<experiment>_test_vs_cntl_``; DESeq2 and Sleuth output gets ``<experiment>_<tool>_``
+    (deseq2_metadata.tsv excepted, as before). Already-prefixed files are left alone, so a
+    resumed run does not double the prefix.
+    """
+    results_dir = Path(results_dir)
+    artifacts = results_dir / "artifacts"
+    contrast_prefix = f"{experiment_id}_test_vs_cntl_"
+
+    def rename(path, new_name):
+        if path.name.startswith(f"{experiment_id}_"):
+            return
+        path.rename(path.with_name(new_name))
+
+    for folder, pattern in ((artifacts / "rmats_raw" / "JCEC", "*"),
+                            (results_dir / "reports", "*.png")):
+        for path in sorted(folder.glob(pattern)):
+            if path.is_file():
+                rename(path, contrast_prefix + path.name)
+
+    for tool in ("deseq2", "sleuth"):
+        for folder in (artifacts / tool, artifacts / tool / "prep_files"):
+            for path in sorted(folder.glob("*")):
+                if not path.is_file() or path.name == "deseq2_metadata.tsv":
+                    continue
+                rest = path.name[len(tool) + 1:] if path.name.startswith(f"{tool}_") else path.name
+                rename(path, f"{experiment_id}_{tool}_{rest}")
+
+    de_gene_xlsx = results_dir / "reports" / "de_gene.xlsx"
+    if de_gene_xlsx.is_file():
+        rename(de_gene_xlsx, f"{experiment_id}_de_gene.xlsx")
 
 def process_sample(sample_name, fastq1, fastq2):
     import datetime
@@ -2259,7 +2297,7 @@ def main():
 
         stage = "organize"
         log_total_time(start_time, results_dir)
-        organize_artifacts(results_dir, sample_names)
+        organize_artifacts(results_dir, sample_names, ctx.experiment_id)
 
         stage = "checksums"
         known_hashes = {row["file_path"]: row["sha256"] for row in bigwig_rows}

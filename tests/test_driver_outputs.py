@@ -18,6 +18,7 @@ def test_gsea_runs_every_gene_set_collection(tmp_path):
 
 
 SAMPLE = "CNTL-1_L02"
+EXPERIMENT = "Mutu_DDX5-KO_2026-09-30"
 RMATS_EVENTS = ("A3SS", "A5SS", "MXE", "RI", "SE")
 
 
@@ -57,12 +58,13 @@ def _pre_organize_tree(results_dir):
     for name in ("topGenes.tsv", "alignmentSummary.tsv", "mycoplasma_report.tsv"):
         _touch(results_dir / name)
     _touch(results_dir / "reports" / "report.html")
+    _touch(results_dir / "reports" / "de_gene.xlsx")
 
 
 def _organized(tmp_path):
     results_dir = tmp_path / "output"
     _pre_organize_tree(results_dir)
-    rnaseq.organize_artifacts(results_dir, [SAMPLE])
+    rnaseq.organize_artifacts(results_dir, [SAMPLE], EXPERIMENT)
     return results_dir
 
 
@@ -71,7 +73,8 @@ def test_rmats_summary_sits_with_the_jcec_results(tmp_path):
     it did in the original 1_JCEC folder. JC files and intermediates stay one level up."""
     jcec = _organized(tmp_path) / "artifacts" / "rmats_raw" / "JCEC"
     names = sorted(path.name for path in jcec.iterdir())
-    assert names == sorted([f"{e}.MATS.JCEC.txt" for e in RMATS_EVENTS] + ["summary.txt"])
+    expected = [f"{e}.MATS.JCEC.txt" for e in RMATS_EVENTS] + ["summary.txt"]
+    assert names == sorted(f"{EXPERIMENT}_test_vs_cntl_{name}" for name in expected)
     assert (jcec.parent / "SE.MATS.JC.txt").is_file()
 
 
@@ -91,4 +94,34 @@ def test_de_spreadsheets_are_kept_apart_from_prep_files(tmp_path):
         top = sorted(path.suffix for path in (artifacts / tool).iterdir() if path.is_file())
         assert top == [".xlsx"]
         assert any((artifacts / tool / "prep_files").iterdir())
-    assert (artifacts / "deseq2" / "prep_files" / "deseq2_results.csv").is_file()
+    assert (artifacts / "deseq2" / "prep_files" / f"{EXPERIMENT}_deseq2_results.csv").is_file()
+
+
+def test_researcher_files_carry_the_experiment_name(tmp_path):
+    """F4: the original rename passes' names, so files copied out of the run still say which
+    experiment they are from."""
+    results_dir = _organized(tmp_path)
+    artifacts = results_dir / "artifacts"
+    contrast = f"{EXPERIMENT}_test_vs_cntl_"
+    assert sorted(path.name for path in (results_dir / "reports").glob("*.png")) == [
+        f"{contrast}PCA_plot.png", f"{contrast}barChart_rmatsASE_fdr0.05.png",
+        f"{contrast}volcano_plot.png",
+    ]
+    assert (artifacts / "deseq2" / f"{EXPERIMENT}_deseq2_results_genes.xlsx").is_file()
+    assert (artifacts / "sleuth" / f"{EXPERIMENT}_sleuth_results_wald_transcripts.xlsx").is_file()
+    prep = artifacts / "deseq2" / "prep_files"
+    assert (prep / "deseq2_metadata.tsv").is_file()  # the original left this one unprefixed
+    assert (prep / f"{EXPERIMENT}_deseq2_counts_matrix.tsv").is_file()
+    assert (artifacts / "sleuth" / "prep_files" / f"{EXPERIMENT}_sleuth_metadata.tsv").is_file()
+    assert (results_dir / "reports" / f"{EXPERIMENT}_de_gene.xlsx").is_file()
+    # The original never renamed the summary tables or the HTML report.
+    assert (results_dir / "reports" / "topGenes.tsv").is_file()
+    assert (results_dir / "reports" / "report.html").is_file()
+
+
+def test_prefixing_is_idempotent(tmp_path):
+    """A resumed run must not stack a second prefix on files that already have one."""
+    results_dir = _organized(tmp_path)
+    before = sorted(p.relative_to(results_dir) for p in results_dir.rglob("*"))
+    rnaseq.prefix_experiment_name(results_dir, EXPERIMENT)
+    assert sorted(p.relative_to(results_dir) for p in results_dir.rglob("*")) == before
