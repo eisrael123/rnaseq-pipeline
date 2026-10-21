@@ -73,3 +73,11 @@ def test_rmats_summary_sits_with_the_jcec_results(tmp_path):
     names = sorted(path.name for path in jcec.iterdir())
     assert names == sorted([f"{e}.MATS.JCEC.txt" for e in RMATS_EVENTS] + ["summary.txt"])
     assert (jcec.parent / "SE.MATS.JC.txt").is_file()
+
+
+def test_kallisto_output_is_not_nested_twice(tmp_path):
+    """F3: artifacts/kallisto/<sample>/, as in the original 04_abundance_estimation/kallisto/,
+    not artifacts/kallisto/kallisto/<sample>/."""
+    kallisto = _organized(tmp_path) / "artifacts" / "kallisto"
+    assert (kallisto / SAMPLE / f"{SAMPLE}_hg38" / "abundance.tsv").is_file()
+    assert not (kallisto / "kallisto").exists()

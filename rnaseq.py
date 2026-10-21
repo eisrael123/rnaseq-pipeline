@@ -1712,7 +1712,8 @@ def organize_artifacts(results_dir, sample_names):
     for pattern in ("deseq2/*.png", "rmats/rmats_out/*.png"):
         move_glob(pattern, results_dir / "reports")
 
-    move_into(results_dir / "kallisto", artifacts / "kallisto")
+    # The per-sample folders, not the kallisto folder itself, or they end up a level deeper.
+    move_glob("kallisto/*", artifacts / "kallisto")
     for pattern, destination in (
         ("deseq2/*", artifacts / "deseq2"),
         ("sleuth/*", artifacts / "sleuth"),
