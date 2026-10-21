@@ -111,6 +111,9 @@ def validate(results_dir: Path) -> Report:
         if manifest.get("exit_status") != "success":
             report.fail(f"run_manifest.json exit_status is {manifest.get('exit_status')!r}, "
                         "expected 'success'")
+        for sample in manifest.get("strandedness_fallback", []):
+            report.warn(f"{sample}: RSeQC could not determine strandedness; analysed as "
+                        f"unstranded")
         for error in manifest.get("output_errors", []):
             report.fail(f"researcher-facing output failed during the run: {error}")
 

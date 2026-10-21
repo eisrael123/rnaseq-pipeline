@@ -169,3 +169,38 @@ def test_output_errors_are_written_to_the_error_log(tmp_path):
 def test_no_output_errors_writes_no_error_log(tmp_path):
     rnaseq.record_output_errors(tmp_path, [])
     assert not (tmp_path / "logs").exists()
+
+
+UNCLASSIFIABLE_RSEQC = (
+    "This is PairEnd Data\n"
+    "Fraction of reads failed to determine: 0.9100\n"
+    'Fraction of reads explained by "1++,1--,2+-,2-+": 0.0500\n'
+    'Fraction of reads explained by "1+-,1-+,2++,2--": 0.0400\n'
+)
+
+
+def test_undetermined_strandedness_is_analysed_as_unstranded(tmp_path, monkeypatch, capsys):
+    """F9: the original pipeline carried on as unstranded when RSeQC could not tell; the
+    refactor stopped the run. Carry on again, but say so."""
+    monkeypatch.setattr(rnaseq, "REFERENCE_DIR", tmp_path / "ref", raising=False)
+    monkeypatch.setattr(rnaseq, "species_name", "hg38", raising=False)
+    monkeypatch.setattr(rnaseq.subprocess, "run", lambda *args, **kwargs:
+                        rnaseq.subprocess.CompletedProcess(args, 0, UNCLASSIFIABLE_RSEQC))
+    bam = tmp_path / f"{SAMPLE}_Aligned.sortedByCoord.out.bam"
+
+    assert rnaseq.infer_strandedness(bam, "hg38", tmp_path) == "unstranded"
+    assert "could not determine strandedness" in capsys.readouterr().out
+
+    strandedness = rnaseq.strandedness_module
+    record = strandedness.rseqc_path(tmp_path, SAMPLE).read_text()
+    assert record.startswith(UNCLASSIFIABLE_RSEQC)
+    assert "Library Type: unstranded" in record and strandedness.FALLBACK_LINE in record
+    # The rest of the run reads the analysed type back; metadata.tsv gets the measured one.
+    assert strandedness.read_library_type(tmp_path, SAMPLE) == "unstranded"
+    assert strandedness.read_measured_library_type(tmp_path, SAMPLE) == "undetermined"
+    assert rnaseq.strandedness_label(record).startswith("unstranded (RSeQC could not")
+
+
+def test_report_labels_classified_libraries_plainly():
+    assert rnaseq.strandedness_label(UNCLASSIFIABLE_RSEQC.replace("0.9100", "0.0100").replace(
+        "0.0500", "0.4900").replace("0.0400", "0.5000")) == "unstranded"

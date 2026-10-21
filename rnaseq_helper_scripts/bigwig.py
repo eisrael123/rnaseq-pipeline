@@ -5,7 +5,8 @@ Two things the legacy archive got wrong are fixed here.
 
 *Strand*: STAR's ``str1``/``str2`` means opposite genomic strands depending on library
 chemistry, so it is resolved through ``strandedness.star_strand_label`` and written into the
-filename and the manifest. An undetermined library fails the run rather than guessing.
+filename and the manifest. A library RSeQC could not classify arrives here as unstranded
+(strandedness.analysed_library_type) and gets a single unstranded track.
 
 *Normalization*: STAR is run with ``--outWigNorm None``, so raw tracks are not comparable
 between samples. Every track is scaled to CPM and the factor actually applied is recorded per

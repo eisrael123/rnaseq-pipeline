@@ -80,6 +80,7 @@ Added as the run progresses, so absent from a manifest written at startup:
 | `failed_stage` | Stage that raised, present only when `exit_status` is `failed`. |
 | `error` | Exception type and message, present only when `exit_status` is `failed`. |
 | `validation` | Result of `validate_outputs.py`: `status`, `failures` and `warnings`. |
+| `strandedness_fallback` | Samples RSeQC could not classify, which were analysed as unstranded. Absent when every sample was classified. |
 | `output_errors` | Researcher-facing outputs that failed (a spreadsheet, figure, junction BED, the HTML report, or a GSEA gene set collection), one string each. The run still finishes, but any entry here fails validation. |
 
 ## Tables

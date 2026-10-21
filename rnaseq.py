@@ -74,6 +74,12 @@ def check_environment():
     soft, hard = 10000, 10000
     resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
 
+def notify(message):
+    """Print to logs/pipeline.log and, when stdout is redirected there, to the terminal too."""
+    print(message)
+    if sys.__stderr__ is not None and sys.stdout is not sys.__stdout__:
+        sys.__stderr__.write(message + "\n")
+
 def sample_sort_key(name: str):
     # natural sort on trailing integer if present
     m = re.search(r"(\d+)(?!.*\d)", name)
@@ -230,11 +236,15 @@ def post_process_alignment(sample_name, star_results_dir):
     return sorted_bam
 
 def infer_strandedness(sorted_bam, species, results_dir):
-    """Infer library strandedness with RSeQC and return the canonical library type.
+    """Infer library strandedness with RSeQC and return the library type to analyse with.
 
     The raw RSeQC output is kept verbatim for the record; the interpretation is appended as a
     single machine-readable line. Every consumer reads it back through
     ``strandedness.parse_rseqc`` rather than string-matching this file.
+
+    If RSeQC cannot tell, the sample is analysed as unstranded, as in the original pipeline,
+    and a note goes into the RSeQC file, the log and the terminal; main() also records it in
+    the manifest and report.html shows it.
     """
     rseqc_dir = results_dir / "rseqc"
     os.makedirs(rseqc_dir, exist_ok=True)
@@ -246,18 +256,19 @@ def infer_strandedness(sorted_bam, species, results_dir):
     print(f"Running RSeQC infer_experiment.py: {' '.join(infer_command)}")
     result = subprocess.run(infer_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-    parsed = strandedness_module.parse_rseqc(result.stdout)
+    measured = strandedness_module.parse_rseqc(result.stdout)["library_type"]
+    analysed = strandedness_module.analysed_library_type(measured)
     with open(output_file, "w") as outfile:
         outfile.write(result.stdout)
-        outfile.write(f"\n{strandedness_module.CANONICAL_LINE} {parsed['library_type']}\n")
+        outfile.write(f"\n{strandedness_module.CANONICAL_LINE} {analysed}\n")
+        if analysed != measured:
+            outfile.write(f"{strandedness_module.FALLBACK_LINE}\n")
 
-    if parsed["library_type"] == strandedness_module.UNDETERMINED:
-        raise RuntimeError(
-            f"RSeQC could not determine strandedness for {sorted_bam.name}. Strand-resolved "
-            f"bigWigs and rMATS both depend on it, so the run is stopping rather than "
-            f"guessing. See {output_file}."
-        )
-    return parsed["library_type"]
+    if analysed != measured:
+        notify(f"WARNING: RSeQC could not determine strandedness for {sorted_bam.name}; "
+               f"analysing it as unstranded (one unstranded bigWig per content type, "
+               f"kallisto and rMATS unstranded). See {output_file}.")
+    return analysed
 
 def run_kallisto(fastq1, fastq2, sample_name, species_name, strandedness, results_dir, is_contaminant_run=False):
     """Run kallisto quant to measure abundance for species or contaminants."""
@@ -1526,6 +1537,13 @@ def summarize_transcript_coverage(results_dir, sample_names, species_name):
             else:
                 print(f"Warning: {run_info_file} does not exist")
 
+def strandedness_label(rseqc_text):
+    """How report.html describes a sample's strandedness."""
+    measured = strandedness_module.parse_rseqc(rseqc_text)["library_type"]
+    if measured == strandedness_module.UNDETERMINED:
+        return "unstranded (RSeQC could not determine; analysed as unstranded)"
+    return measured
+
 def generate_results_html(results_dir, sample_names):
     results_file = results_dir / "reports" / "report.html"
     results_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1555,8 +1573,7 @@ def generate_results_html(results_dir, sample_names):
     for sample_name in sample_names:
         strandedness_file = strandedness_module.rseqc_path(results_dir, sample_name)
         if strandedness_file.exists():
-            parsed = strandedness_module.parse_rseqc(strandedness_file.read_text())
-            strandedness_report.append(parsed["library_type"])
+            strandedness_report.append(strandedness_label(strandedness_file.read_text()))
 
     # Read the alignment summary
     alignment_summary = []
@@ -2078,13 +2095,9 @@ def record_output_errors(results_dir, errors):
     with open(stage_log_path(results_dir, "errors"), "a") as log:
         for error in errors:
             log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\toutput\t{error}\n")
-    banner = (f"\nERROR: {len(errors)} researcher-facing output(s) failed and are missing or "
-              f"incomplete:\n" + "".join(f"  - {error}\n" for error in errors) +
-              f"See {stage_log_path(results_dir, 'errors')}.\n")
-    print(banner)
-    # stdout is redirected to logs/pipeline.log; say it where the person running it will see.
-    if sys.__stderr__ is not None and sys.stdout is not sys.__stdout__:
-        sys.__stderr__.write(banner)
+    notify(f"\nERROR: {len(errors)} researcher-facing output(s) failed and are missing or "
+           f"incomplete:\n" + "".join(f"  - {error}\n" for error in errors) +
+           f"See {stage_log_path(results_dir, 'errors')}.")
 
 def write_human_readable_outputs(metadata_file, results_dir, sample_names, species_name):
     """Figures, spreadsheets and the HTML report.
@@ -2252,7 +2265,17 @@ def main():
 
         stage = "qc_metrics"
         tables_qc.write_qc_metrics(ctx, results_dir, sample_names, species_name)
-        tables_qc.update_metadata_strandedness(results_dir, library_types)
+        # metadata.tsv records what RSeQC measured, undetermined included; library_types is
+        # what the analysis used.
+        measured_types = {name: strandedness_module.read_measured_library_type(results_dir, name)
+                          for name in sample_names}
+        tables_qc.update_metadata_strandedness(results_dir, measured_types)
+        fallback = [name for name in sample_names
+                    if measured_types[name] != library_types[name]]
+        if fallback:
+            manifest.set("strandedness_fallback", fallback)
+            notify(f"WARNING: analysed as unstranded because RSeQC could not determine their "
+                   f"strandedness: {', '.join(fallback)}")
         library_type = next(iter(set(library_types.values())))
 
         stage = "deseq2"
