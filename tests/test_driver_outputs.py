@@ -210,3 +210,13 @@ def test_report_uses_the_original_strandedness_words():
     assert rnaseq.strandedness_label(rseqc("0.0300", "0.9600")) == "rf-stranded (fr-firststrand)"
     assert rnaseq.strandedness_label(rseqc("0.9600", "0.0300")) == "fr-stranded (fr-secondstrand)"
     assert rnaseq.strandedness_label(rseqc("0.4900", "0.5000")) == "unstranded"
+
+
+def test_manifest_deseq2_alpha_matches_what_r_uses():
+    """F15: the manifest said 0.05 while the R script used DESeq2's default of 0.1. If the R
+    call ever sets alpha, this has to change with it."""
+    script = (rnaseq.Path(rnaseq.__file__).parent / "rnaseq_helper_scripts" /
+              "deseq2_analysis_ercc.R").read_text()
+    assert "res <- results(dds)\n" in script
+    assert "alpha" not in script
+    assert rnaseq.DESEQ2_ALPHA == 0.1

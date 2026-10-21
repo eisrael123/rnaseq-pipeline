@@ -276,7 +276,7 @@ def build_manifest(results_dir: Path, run_id: str = RUN_ID) -> dict:
         "run_start_utc": "2026-01-15T10:00:00Z", "run_end_utc": "2026-01-15T18:00:00Z",
         "exit_status": "success", "gene_id_source": "ensembl",
         "tool_versions": {"STAR": "2.7.11b", "kallisto": "0.52.0"},
-        "parameters": {"deseq2_alpha": 0.05},
+        "parameters": {"deseq2_alpha": 0.1},
     }
     (results_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest

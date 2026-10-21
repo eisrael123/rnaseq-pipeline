@@ -55,7 +55,9 @@ STAR_COMMON_ARGS = [
 ]
 KALLISTO_COMMON_ARGS = ["-b", "100", "-t", "10"]
 RMATS_COMMON_ARGS = ["--variable-read-length", "--nthread", "10"]
-DESEQ2_ALPHA = 0.05
+# Recorded in the manifest, not passed to R: deseq2_analysis_ercc.R calls results(dds) with
+# DESeq2's default alpha (0.1, the FDR target for independent filtering), as the original did.
+DESEQ2_ALPHA = 0.1
 
 def check_environment():
     """Refuse to run outside the pipeline's conda env, and raise the open-file limit.
