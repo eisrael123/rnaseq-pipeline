@@ -1714,9 +1714,12 @@ def organize_artifacts(results_dir, sample_names):
 
     # The per-sample folders, not the kallisto folder itself, or they end up a level deeper.
     move_glob("kallisto/*", artifacts / "kallisto")
+    # The spreadsheets are what people open, so they sit on top and everything the analysis
+    # wrote on the way to them goes in prep_files/, as in the original layout.
+    for tool in ("deseq2", "sleuth"):
+        move_glob(f"{tool}/*.xlsx", artifacts / tool)
+        move_glob(f"{tool}/*", artifacts / tool / "prep_files")
     for pattern, destination in (
-        ("deseq2/*", artifacts / "deseq2"),
-        ("sleuth/*", artifacts / "sleuth"),
         ("gsea/*", artifacts / "gsea"),
         # The per-event-type JCEC results are the ones people open; keep them apart from the
         # JC files and rMATS intermediates so the wrong file is hard to pick up.

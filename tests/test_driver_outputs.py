@@ -81,3 +81,14 @@ def test_kallisto_output_is_not_nested_twice(tmp_path):
     kallisto = _organized(tmp_path) / "artifacts" / "kallisto"
     assert (kallisto / SAMPLE / f"{SAMPLE}_hg38" / "abundance.tsv").is_file()
     assert not (kallisto / "kallisto").exists()
+
+
+def test_de_spreadsheets_are_kept_apart_from_prep_files(tmp_path):
+    """F5: the DESeq2/Sleuth XLSX files sit at the top of their folder and the intermediates in
+    prep_files/, as in the original 05_differential_expression/<tool>/prep_files/."""
+    artifacts = _organized(tmp_path) / "artifacts"
+    for tool in ("deseq2", "sleuth"):
+        top = sorted(path.suffix for path in (artifacts / tool).iterdir() if path.is_file())
+        assert top == [".xlsx"]
+        assert any((artifacts / tool / "prep_files").iterdir())
+    assert (artifacts / "deseq2" / "prep_files" / "deseq2_results.csv").is_file()
