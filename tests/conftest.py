@@ -241,7 +241,7 @@ def _bigwig_rows(ctx: RunContext, results_dir: Path) -> list[dict]:
                     "run_id": ctx.run_id, "sample_id": sample_id,
                     "file_path": path.relative_to(results_dir).as_posix(),
                     "content": content, "strand": strand, "genome_build": GENOME_BUILD,
-                    "normalization": "cpm", "scale_factor": 0.625,
+                    "normalization": "raw", "scale_factor": 1.0,
                     "sha256": sha256_file(path), "bytes": path.stat().st_size,
                 })
     return rows

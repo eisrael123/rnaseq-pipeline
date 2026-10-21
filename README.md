@@ -264,8 +264,9 @@ Optional:
   when the GTF has no version in its header and no `ANNOTATION_VERSION` marker file.
 - `--skip-transcript-expression`: write `expression_transcript.tsv` with headers only. It is by
   far the largest table.
-- `--normalization`: bigWig normalization. Leave at the default; it has to be uniform across
-  runs for tracks to be comparable.
+- `--normalization`: normalization of the `cpm_bigwigs/` copies and of `signal_over_gene`.
+  Leave at the default; it has to be uniform across runs for those to be comparable. The main
+  bigWigs in `artifacts/bigwig/` are always raw counts.
 
 
 ### 1) Run interactively (recommended first run)
@@ -392,17 +393,22 @@ before this layout existed is recorded in [docs/CURRENT_OUTPUTS.md](docs/CURRENT
 ├── checksums.sha256
 ├── tables/             the machine-readable results; this is what the warehouse reads
 ├── artifacts/          raw tool output, bigWigs and BAMs, kept for re-analysis
-│   ├── bigwig/unique/        CPM bigWigs, uniquely mapped reads
-│   ├── bigwig/uniquemulti/   CPM bigWigs, unique + multi-mapped reads
+│   ├── bigwig/unique/        raw-count bigWigs, uniquely mapped reads
+│   ├── bigwig/uniquemulti/   raw-count bigWigs, unique + multi-mapped reads
 │   └── rmats_raw/JCEC/       the five *.MATS.JCEC.txt results (rest of rMATS in rmats_raw/)
-├── raw_count_bigwigs/  unscaled read-count bigWigs (unique/, uniquemulti/) + raw_count_manifest.tsv
+├── cpm_bigwigs/        CPM-scaled copies of the bigWigs (unique/, uniquemulti/) + cpm_manifest.tsv
 ├── reports/            XLSX, figures and report.html, for reading rather than querying
 └── logs/               one log per stage
 ```
 
-`raw_count_bigwigs/` is not part of the run's `checksums.sha256` (its own manifest carries a
-SHA-256 per file): the lab's update kit uploads it to `raw_count_bigwigs/<experiment>/` on the
-share, next to `pipeline_output/`, rather than into the experiment folder.
+`cpm_bigwigs/` is not part of the run's `checksums.sha256` (its own manifest carries a SHA-256
+per file) and is not meant to be uploaded with the experiment folder. `signal_over_gene` is
+computed from it, so those values stay comparable between samples.
+
+Runs made before raw counts became the main tracks (all 70 experiments in the archive as of
+October 2026) have CPM bigWigs in `artifacts/bigwig/` and raw copies in a separate
+`raw_count_bigwigs/<experiment>/` folder on the share. Those raw copies were reconstructed
+from the CPM tracks (CPM ÷ `scale_factor`, rounded), not taken from STAR.
 
 Everything in `tables/` is a TSV in long format: one row per gene, transcript, event or metric,
 never one column per sample. Missing values are the literal string `NA`. Every row carries a
@@ -416,14 +422,15 @@ never one column per sample. Missing values are the literal string `NA`. Every r
 - bigWigs are named `<sample_id>.<content>.<build>.<strand>.bw`. STAR's `str1`/`str2` no longer
   appears anywhere: which one is the plus strand depends on the library chemistry, so it is
   resolved from the RSeQC call and written into the filename and the manifest.
-- bigWig values are CPM-normalized. Minus-strand tracks hold **negative** values (plus and
-  unstranded tracks are positive), so they mirror below the axis in a genome browser. To compare
-  coverage between genes or tracks, use the absolute value; `signal_over_gene` reports positive
-  magnitudes on every strand.
+- bigWig values are STAR's raw counts, as before (whole reads for unique, 1/N fractions for
+  multi-mappers). Minus-strand tracks hold **negative** values (plus and unstranded tracks are
+  positive), so they mirror below the axis in a genome browser. To compare coverage between
+  genes or tracks, use the absolute value; `signal_over_gene` reports positive magnitudes on
+  every strand.
+- New: each bigWig has a CPM-scaled copy in `cpm_bigwigs/<content>/<name>.cpm.bw`, described by
+  `cpm_bigwigs/cpm_manifest.tsv`. `signal_over_gene` is computed from the CPM copies.
 - bigWigs are split by content into `artifacts/bigwig/unique/` and
-  `artifacts/bigwig/uniquemulti/`, and each has an unscaled raw-count twin in
-  `raw_count_bigwigs/<content>/<name>.raw.bw`: STAR's own counts (whole reads for unique,
-  1/N fractions for multi-mappers), minus strand negative. Raw ≈ CPM ÷ `scale_factor` (CPM is stored to 6 digits).
+  `artifacts/bigwig/uniquemulti/`, as the original `1_unique/` and `2_unique_multiple/` were.
 - rMATS's five `*.MATS.JCEC.txt` files are in `artifacts/rmats_raw/JCEC/`.
 - Output filenames are no longer rewritten after the fact. The four `rename_*` passes are gone,
   along with the naming inconsistencies they caused.

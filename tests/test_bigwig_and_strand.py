@@ -112,10 +112,11 @@ def test_bigwig_filenames_carry_strand_and_content(results_dir):
         assert "str1" not in name and "str2" not in name
 
 
-def test_bigwig_manifest_records_normalization(results_dir):
+def test_bigwig_manifest_records_raw_counts(results_dir):
+    """D1: the main bigWigs are STAR's raw counts, as in the original pipeline."""
     manifest = pd.read_csv(results_dir / get_table("bigwig_manifest").relpath, sep="\t")
-    assert set(manifest["normalization"]) == {"cpm"}
-    assert (manifest["scale_factor"] > 0).all()
+    assert set(manifest["normalization"]) == {"raw"}
+    assert (manifest["scale_factor"] == 1.0).all()
 
 
 def test_cpm_scale_factor():
@@ -269,33 +270,41 @@ def test_wig_rescaling_writes_raw_counts_in_the_same_pass(tmp_path):
     assert raw.read_text() == "variableStep chrom=chr1\n1\t-3\n2\t-0.33333\n"
 
 
-def test_raw_count_manifest_pairs_each_raw_track_with_its_cpm_track(tmp_path):
-    from outputs import RunContext
-    ctx = RunContext(run_id="R1", experiment_id="Cell_X_2026-01-01", results_dir=tmp_path,
-                     genome_build=GENOME_BUILD)
-    rows = [{"run_id": "R1", "sample_id": "S1", "content": content, "strand": "minus",
-             "genome_build": GENOME_BUILD, "scale_factor": 0.5,
+def _converted_rows():
+    return [{"run_id": "R1", "sample_id": "S1", "content": content, "strand": "minus",
+             "genome_build": GENOME_BUILD, "normalization": "raw", "scale_factor": 1.0,
              "file_path": f"artifacts/bigwig/{content}/S1.{content}.{GENOME_BUILD}.minus.bw",
-             "raw_file_path": f"{content}/S1.{content}.{GENOME_BUILD}.minus.raw.bw",
-             "raw_sha256": "ab" * 32, "raw_bytes": 10}
+             "sha256": "cd" * 32, "bytes": 12,
+             "cpm_file_path": f"{content}/S1.{content}.{GENOME_BUILD}.minus.cpm.bw",
+             "cpm_normalization": "cpm", "cpm_scale_factor": 0.5,
+             "cpm_sha256": "ab" * 32, "cpm_bytes": 10}
             for content in ("unique", "uniquemulti")]
-    path = bigwig.write_raw_count_manifest(ctx, tmp_path, rows)
-    assert path == tmp_path / "raw_count_bigwigs" / "raw_count_manifest.tsv"
+
+
+def test_cpm_manifest_pairs_each_cpm_copy_with_its_raw_track(tmp_path):
+    rows = _converted_rows()
+    path = bigwig.write_cpm_manifest(tmp_path, rows)
+    assert path == tmp_path / "cpm_bigwigs" / "cpm_manifest.tsv"
     manifest = pd.read_csv(path, sep="\t")
-    assert list(manifest.columns) == bigwig.RAW_COUNT_COLUMNS
-    assert list(manifest["file_path"]) == [r["raw_file_path"] for r in rows]
-    assert list(manifest["source_file"]) == [
-        f"pipeline_output/Cell_X_2026-01-01/{r['file_path']}" for r in rows]
-    assert list(manifest["values"]) == ["integer_reads", "fractional_reads"]
-    assert (manifest["max_rounding_residual"] == 0).all()
-    assert (manifest["ambiguous_positions"] == 0).all()
+    assert list(manifest.columns) == bigwig.CPM_COLUMNS
+    assert list(manifest["file_path"]) == [r["cpm_file_path"] for r in rows]
+    assert list(manifest["source_file"]) == [r["file_path"] for r in rows]
+    assert set(manifest["normalization"]) == {"cpm"}
+    assert list(manifest["scale_factor"]) == [0.5, 0.5]
+
+
+def test_signal_over_gene_reads_the_cpm_copies():
+    """D1: making raw the main tracks must not change signal_over_gene, which stays CPM."""
+    for row in bigwig.cpm_rows(_converted_rows()):
+        assert row["file_path"] == f"cpm_bigwigs/{row['cpm_file_path']}"
+        assert (row["normalization"], row["scale_factor"]) == ("cpm", 0.5)
 
 
 @pytest.mark.skipif(not __import__("shutil").which("wigToBigWig"),
                     reason="wigToBigWig not on PATH (runs inside the pipeline image)")
-def test_convert_sample_bigwigs_writes_split_cpm_and_raw_tracks(tmp_path, monkeypatch):
-    """End to end with the real wigToBigWig: CPM tracks under artifacts/bigwig/<content>/,
-    raw tracks under raw_count_bigwigs/<content>/, minus strand negative in both."""
+def test_convert_sample_bigwigs_writes_split_raw_and_cpm_tracks(tmp_path, monkeypatch):
+    """End to end with the real wigToBigWig: raw tracks under artifacts/bigwig/<content>/,
+    CPM copies under cpm_bigwigs/<content>/, minus strand negative in both."""
     pyBigWig = pytest.importorskip("pyBigWig")
     from outputs import RunContext
     sample = "S1"
@@ -316,10 +325,11 @@ def test_convert_sample_bigwigs_writes_split_cpm_and_raw_tracks(tmp_path, monkey
     rows = bigwig.convert_sample_bigwigs(ctx, tmp_path, sample, "stranded_reverse", sizes)
     assert len(rows) == 4
     for row in rows:
-        cpm_path = tmp_path / row["file_path"]
-        raw_path = tmp_path / "raw_count_bigwigs" / row["raw_file_path"]
+        raw_path = tmp_path / row["file_path"]
+        cpm_path = tmp_path / "cpm_bigwigs" / row["cpm_file_path"]
         assert row["file_path"].startswith(f"artifacts/bigwig/{row['content']}/")
-        assert row["raw_file_path"].startswith(f"{row['content']}/")
+        assert row["cpm_file_path"].startswith(f"{row['content']}/")
+        assert (row["normalization"], row["scale_factor"]) == ("raw", 1.0)
         sign = -1 if row["strand"] == "minus" else 1
         cpm = [v for _, _, v in pyBigWig.open(str(cpm_path)).intervals("chr1")]
         raw = [v for _, _, v in pyBigWig.open(str(raw_path)).intervals("chr1")]

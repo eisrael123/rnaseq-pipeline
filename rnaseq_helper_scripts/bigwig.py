@@ -8,9 +8,9 @@ chemistry, so it is resolved through ``strandedness.star_strand_label`` and writ
 filename and the manifest. A library RSeQC could not classify arrives here as unstranded
 (strandedness.analysed_library_type) and gets a single unstranded track.
 
-*Normalization*: STAR is run with ``--outWigNorm None``, so raw tracks are not comparable
-between samples. Every track is scaled to CPM and the factor actually applied is recorded per
-file. Minus-strand tracks hold negative values (the lab's genome-browser convention); plus and
+*Values*: STAR is run with ``--outWigNorm None`` and the main tracks keep its raw read counts,
+as the original pipeline's did; the lab normalizes downstream, differently per question.
+Minus-strand tracks hold negative values (the lab's genome-browser convention); plus and
 unstranded tracks are positive. Strand is also carried by the filename and the manifest.
 signal_over_gene flips the minus-strand sign back, so its coverage values are positive on both
 strands -- compare coverage between tracks by absolute value.
@@ -19,13 +19,14 @@ strands -- compare coverage between tracks by absolute value.
 ``artifacts/bigwig/uniquemulti/`` so a unique track cannot be picked up by mistake for a
 unique+multi one (the legacy pipeline's 1_unique / 2_unique_multiple split).
 
-*Raw counts*: alongside each CPM track the pipeline writes the same signal unscaled -- STAR's
-own read counts, minus strand negative -- to ``raw_count_bigwigs/<content>/*.raw.bw`` with
-``raw_count_bigwigs/raw_count_manifest.tsv``. That folder sits outside ``tables/`` and
-``artifacts/`` on purpose: the update kit uploads it to the lab share's
-``raw_count_bigwigs/<experiment>/`` rather than into ``pipeline_output/``. Unique tracks hold
-whole reads; unique+multi tracks hold fractions, because STAR splits a read that maps to N loci
-as 1/N per locus.
+Unique tracks hold whole reads; unique+multi tracks hold fractions, because STAR splits a read
+that maps to N loci as 1/N per locus.
+
+*CPM copies*: alongside each raw track the pipeline writes the same signal scaled to CPM, to
+``cpm_bigwigs/<content>/*.cpm.bw`` with ``cpm_bigwigs/cpm_manifest.tsv`` recording the factor
+applied. signal_over_gene is computed from these, so its values stay comparable between
+samples. The folder sits outside ``tables/`` and ``artifacts/``, so it is not in the run's
+checksums and is not uploaded with ``pipeline_output/``.
 """
 
 from __future__ import annotations
@@ -52,14 +53,12 @@ DEFAULT_NORMALIZATION = "cpm"
 # locus and would double-count repeats. The uniquemulti tracks are still in the manifest.
 SIGNAL_CONTENT = "unique"
 DEFAULT_FEATURE_SET = "gene_body"
-RAW_COUNT_DIR = "raw_count_bigwigs"
-RAW_COUNT_MANIFEST = "raw_count_manifest.tsv"
-# Same columns as the manifests of the raw copies made from the 70 experiments converted in
-# Oct 2026. Those were derived by dividing CPM back out and rounding, hence the rounding
-# columns; tracks written here come straight from STAR, so both are always 0.
-RAW_COUNT_COLUMNS = ["run_id", "sample_id", "file_path", "source_file", "content", "strand",
-                     "genome_build", "scale_factor", "values", "max_rounding_residual",
-                     "ambiguous_positions", "sha256", "bytes"]
+# Main tracks: STAR's counts with only the strand sign applied.
+PRIMARY_NORMALIZATION = "raw"
+CPM_DIR = "cpm_bigwigs"
+CPM_MANIFEST = "cpm_manifest.tsv"
+CPM_COLUMNS = ["run_id", "sample_id", "file_path", "source_file", "content", "strand",
+               "genome_build", "normalization", "scale_factor", "sha256", "bytes"]
 
 
 class BigWigError(RuntimeError):
@@ -185,13 +184,13 @@ def regenerate_unstranded_wigs(results_dir: Path, sample_name: str) -> None:
 def convert_sample_bigwigs(ctx: RunContext, results_dir: Path, sample_name: str,
                            library_type: str, chr_sizes: Path,
                            normalization: str = DEFAULT_NORMALIZATION) -> list[dict]:
-    """Convert one sample's STAR wiggles to normalized, canonically named bigWigs, plus an
-    unscaled raw-count bigWig for each. Raw-file details ride along in each row under
-    ``raw_*`` keys for :func:`write_raw_count_manifest`; the bigWig manifest ignores them."""
+    """Convert one sample's STAR wiggles to canonically named raw-count bigWigs, plus a
+    CPM-scaled copy of each. CPM-file details ride along in each row under ``cpm_*`` keys for
+    :func:`write_cpm_manifest` and :func:`cpm_rows`; the bigWig manifest ignores them."""
     results_dir = Path(results_dir)
     star_dir = results_dir / "star" / sample_name
     bigwig_dir = results_dir / "artifacts" / "bigwig"
-    raw_dir = results_dir / RAW_COUNT_DIR
+    cpm_dir = results_dir / CPM_DIR
 
     if not shutil.which("wigToBigWig"):
         raise BigWigError("wigToBigWig is not on PATH")
@@ -216,17 +215,18 @@ def convert_sample_bigwigs(ctx: RunContext, results_dir: Path, sample_name: str,
         factor = scale_factor(sizes[content], normalization)
         scaled_wig = wig.with_suffix(".normalized.wig")
         raw_wig = wig.with_suffix(".raw.wig")
-        # scale_factor in the manifest stays the (positive) CPM factor; the sign is the strand.
+        # Manifest scale factors stay positive (1 for raw, the CPM factor for the copy); the
+        # sign is the strand.
         _rescale_wig(wig, scaled_wig, factor * strand_sign(strand),
                      raw_target=raw_wig, raw_sign=strand_sign(strand))
 
         name = f"{sample_id}.{content}.{ctx.genome_build}.{strand}"
         target = bigwig_dir / content / f"{name}.bw"
-        raw_target = raw_dir / content / f"{name}.raw.bw"
+        cpm_target = cpm_dir / content / f"{name}.{normalization}.bw"
         target.parent.mkdir(parents=True, exist_ok=True)
-        raw_target.parent.mkdir(parents=True, exist_ok=True)
+        cpm_target.parent.mkdir(parents=True, exist_ok=True)
         try:
-            for source, output in ((scaled_wig, target), (raw_wig, raw_target)):
+            for source, output in ((raw_wig, target), (scaled_wig, cpm_target)):
                 command = ["wigToBigWig", str(source), str(chr_sizes), str(output)]
                 try:
                     subprocess.run(command, check=True)
@@ -243,13 +243,15 @@ def convert_sample_bigwigs(ctx: RunContext, results_dir: Path, sample_name: str,
             "content": content,
             "strand": strand,
             "genome_build": ctx.genome_build,
-            "normalization": normalization,
-            "scale_factor": factor,
+            "normalization": PRIMARY_NORMALIZATION,
+            "scale_factor": 1.0,
             "sha256": sha256_file(target),
             "bytes": target.stat().st_size,
-            "raw_file_path": raw_target.relative_to(raw_dir).as_posix(),
-            "raw_sha256": sha256_file(raw_target),
-            "raw_bytes": raw_target.stat().st_size,
+            "cpm_file_path": cpm_target.relative_to(cpm_dir).as_posix(),
+            "cpm_normalization": normalization,
+            "cpm_scale_factor": factor,
+            "cpm_sha256": sha256_file(cpm_target),
+            "cpm_bytes": cpm_target.stat().st_size,
         })
     return rows
 
@@ -259,33 +261,38 @@ def write_bigwig_manifest(results_dir: Path, rows: list[dict]) -> Path:
     return write_table(results_dir, "bigwig_manifest", frame)
 
 
-def write_raw_count_manifest(ctx: RunContext, results_dir: Path, rows: list[dict]) -> Path:
-    """``raw_count_bigwigs/raw_count_manifest.tsv``: one row per raw-count bigWig.
+def write_cpm_manifest(results_dir: Path, rows: list[dict]) -> Path:
+    """``cpm_bigwigs/cpm_manifest.tsv``: one row per CPM copy.
 
-    ``file_path`` is relative to the raw-count folder (it becomes
-    ``raw_count_bigwigs/<experiment>/`` on the lab share); ``source_file`` names the CPM track
-    it pairs with, as it is laid out under the share's ``pipeline_output/``.
+    ``file_path`` is relative to the CPM folder; ``source_file`` is the raw track it was scaled
+    from, relative to results_dir.
     """
     records = [{
         "run_id": row["run_id"],
         "sample_id": row["sample_id"],
-        "file_path": row["raw_file_path"],
-        "source_file": f"pipeline_output/{ctx.experiment_id}/{row['file_path']}",
+        "file_path": row["cpm_file_path"],
+        "source_file": row["file_path"],
         "content": row["content"],
         "strand": row["strand"],
         "genome_build": row["genome_build"],
-        "scale_factor": row["scale_factor"],
-        "values": "integer_reads" if row["content"] == "unique" else "fractional_reads",
-        "max_rounding_residual": 0,
-        "ambiguous_positions": 0,
-        "sha256": row["raw_sha256"],
-        "bytes": row["raw_bytes"],
+        "normalization": row["cpm_normalization"],
+        "scale_factor": row["cpm_scale_factor"],
+        "sha256": row["cpm_sha256"],
+        "bytes": row["cpm_bytes"],
     } for row in rows]
-    target = Path(results_dir) / RAW_COUNT_DIR / RAW_COUNT_MANIFEST
+    target = Path(results_dir) / CPM_DIR / CPM_MANIFEST
     target.parent.mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(records, columns=RAW_COUNT_COLUMNS).to_csv(
+    pd.DataFrame(records, columns=CPM_COLUMNS).to_csv(
         target, sep="\t", index=False, lineterminator="\n")
     return target
+
+
+def cpm_rows(rows: list[dict]) -> list[dict]:
+    """The rows of :func:`convert_sample_bigwigs` pointed at their CPM copies, with paths
+    relative to results_dir, for :func:`write_signal_over_gene`."""
+    return [{**row, "file_path": f"{CPM_DIR}/{row['cpm_file_path']}",
+             "normalization": row["cpm_normalization"], "scale_factor": row["cpm_scale_factor"]}
+            for row in rows]
 
 
 def feature_bed_files(reference_dir: Path, genome_build: str) -> dict[str, Path]:
@@ -353,7 +360,11 @@ def _average_over_bed(bigwig: Path, bed: Path, output: Path) -> pd.DataFrame:
 def write_signal_over_gene(ctx: RunContext, results_dir: Path, reference_dir: Path,
                            annotation: Annotation,
                            manifest_rows: list[dict]) -> tuple[int, str]:
-    """Task 13. Returns ``(row_count, status)``."""
+    """Task 13. Returns ``(row_count, status)``.
+
+    Pass the CPM tracks (:func:`cpm_rows`), not the raw ones, so values are comparable between
+    samples, as they were when CPM tracks were the main output.
+    """
     results_dir = Path(results_dir)
     beds = feature_bed_files(reference_dir, ctx.genome_build)
     tool = shutil.which("bigWigAverageOverBed")
