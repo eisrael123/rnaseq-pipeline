@@ -781,6 +781,19 @@ def gsea_gmt_files(gmt_dir):
     """
     return sorted(Path(gmt_dir).glob("*.gmt"))
 
+GSEA_HEAP = "-Xmx16g"
+
+def gsea_env(environ=None):
+    """Environment for gsea-cli with a heap large enough for the full gene_ontology GMT.
+
+    gsea-cli launches java with ``${JVM_MEM_OPTS:-"-Xmx4g"}`` on the command line, and a
+    command-line -Xmx overrides JAVA_TOOL_OPTIONS, so the heap has to be set through
+    JVM_MEM_OPTS. At 4 GB the full GO collection fails with OutOfMemoryError.
+    """
+    env = dict(os.environ if environ is None else environ)
+    env.setdefault("JVM_MEM_OPTS", GSEA_HEAP)
+    return env
+
 def run_gsea(results_dir, gsea_dir_name, species_name):
     """Run GSEA for each .gmt file in the referenceFiles/{species}/GSEA directory."""
 
@@ -798,10 +811,7 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
 
     gmt_files = gsea_gmt_files(gsea_reference_dir)
 
-    # GSEA is a fat Java process; conda's default heap is too small for the largest GMTs.
-    env = os.environ.copy()
-    if "GSEA_JVM_HEAP" not in env and "JAVA_TOOL_OPTIONS" not in env:
-        env["JAVA_TOOL_OPTIONS"] = "-Xmx16g"
+    env = gsea_env()
 
     failed = []
     for gmt_file in gmt_files:
@@ -905,10 +915,7 @@ def run_gsea_preranked(rnk_file, gsea_results_dir, gmt_file):
     ]
 
     try:
-        env = os.environ.copy()
-        if "GSEA_JVM_HEAP" not in env and "JAVA_TOOL_OPTIONS" not in env:
-            env["JAVA_TOOL_OPTIONS"] = "-Xmx16g"
-        subprocess.run(cmd, check=True, env=env, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, env=gsea_env(), capture_output=True, text=True)
         print(f"✅ GSEA pre-ranked analysis completed successfully for '{gmt_file}'")
         return True
     except subprocess.CalledProcessError as e:

@@ -447,7 +447,10 @@ never one column per sample. Missing values are the literal string `NA`. Every r
   October 2026 have it one level deeper, in `artifacts/kallisto/kallisto/<sample>/`.
 - GSEA runs every gene set collection in the reference folder, as the original did, including
   the full `gene_ontology` GMT, the only one with the cellular-component sets. Runs made
-  between commit 9ea83ea (July 2026) and October 2026 skipped it.
+  between commit 9ea83ea (July 2026) and October 2026 skipped it. GSEA now gets a 16 GB Java
+  heap through `JVM_MEM_OPTS`; before, the conda `gsea-cli` silently capped it at 4 GB, which
+  is too small for that file. (The original pipeline's hand-installed `gsea-cli.sh` had
+  `-Xmx12g` written into it.)
 - `results.html` is now `reports/report.html`. Its strandedness row uses the original words
   with the canonical name alongside: `rf-stranded (fr-firststrand)`,
   `fr-stranded (fr-secondstrand)`, `unstranded`.

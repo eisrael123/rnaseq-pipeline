@@ -17,6 +17,26 @@ def test_gsea_runs_every_gene_set_collection(tmp_path):
     assert [path.name for path in rnaseq.gsea_gmt_files(tmp_path)] == names
 
 
+
+def test_gsea_heap_is_passed_the_way_gsea_cli_reads_it():
+    """F1: gsea-cli puts ${JVM_MEM_OPTS:-"-Xmx4g"} on the java command line, which overrides
+    JAVA_TOOL_OPTIONS; setting only the latter left GSEA at 4 GB and the full GO set ran out
+    of memory."""
+    assert rnaseq.gsea_env({})["JVM_MEM_OPTS"] == "-Xmx16g"
+    assert rnaseq.gsea_env({"JVM_MEM_OPTS": "-Xmx32g"})["JVM_MEM_OPTS"] == "-Xmx32g"
+
+
+def test_installed_gsea_cli_still_reads_jvm_mem_opts():
+    """F1: guards gsea_env against a gsea-cli upgrade that renames the variable. Only the conda
+    gsea-cli (the Docker image) reads it; the lab Mac's hand-installed gsea-cli.sh hard-codes
+    -Xmx12g instead."""
+    import shutil
+    import pytest
+    gsea_cli = shutil.which("gsea-cli")
+    if not gsea_cli:
+        pytest.skip("conda gsea-cli not installed")
+    assert "JVM_MEM_OPTS" in open(gsea_cli).read()
+
 SAMPLE = "CNTL-1_L02"
 EXPERIMENT = "Mutu_DDX5-KO_2026-09-30"
 RMATS_EVENTS = ("A3SS", "A5SS", "MXE", "RI", "SE")
