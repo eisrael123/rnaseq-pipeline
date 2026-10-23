@@ -1066,7 +1066,8 @@ def generate_splicing_bar_chart(results_dir):
     """
     # Only needed here; importing them inside keeps the module importable in CI.
     import matplotlib.pyplot as plt
-    from matplotlib import rcParams
+    import figure_style
+    figure_style.apply()
 
     rmats_out_dir = Path(results_dir) / "rmats" / "rmats_out"
 
@@ -1116,19 +1117,14 @@ def generate_splicing_bar_chart(results_dir):
         y1 = [yp1, yp2, yp3, yp4, yp5]
         y2 = [yn1, yn2, yn3, yn4, yn5]
 
-        # Plot bars in stacked manner
-        rcParams['font.family'] = 'sans-serif'
-        rcParams['font.sans-serif'] = ['Arial']
-        frameon = False
-        plt.bar(x, y1, color='c', label='positive', edgecolor='k', linewidth=0.25)
-        plt.bar(x, y2, bottom=y1, color='salmon', label='negative', edgecolor='k', linewidth=0.25)
-        ax = plt.gca()
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        plt.ylabel("Number of altered splicing events")
+        # Plot bars in stacked manner (style: figure_style)
+        plt.figure(figsize=(8, 7))
+        plt.bar(x, y1, color=figure_style.PALE_BLUE, label='positive')
+        plt.bar(x, y2, bottom=y1, color=figure_style.STEEL_BLUE, label='negative')
+        plt.ylabel("Number of altered\nsplicing events")
         plt.legend(loc='upper left')
-        plt.title(f"rMATS Alternative Splicing Events FDR {fdr_threshold}")
-        plt.savefig(output_file, dpi=300)
+        plt.title(f"rMATS Alternative Splicing Events\nFDR {fdr_threshold}")
+        plt.savefig(output_file)
         plt.close()
 
     # Generate bar charts for FDR 0.05 and FDR 0.0005

@@ -29,6 +29,25 @@ library(ggplot2)
 library(ggrepel)
 library(reshape2)
 
+# Manuscript-ready figures, matching figure_style.py: Arial, text twice ggplot2's default
+# (theme_classic base_size 11), 1 pt black axis lines and ticks, and the colours from the lab's
+# Nguyen et al. 2026 bioRxiv figures.
+STEEL_BLUE <- "#8CBBCE"
+PEACH <- "#FFC99D"
+ONE_PT <- 1 / .pt  # ggplot2 linewidths are in mm
+theme_manuscript <- function() {
+  theme_classic(base_size = 22, base_family = "Arial") +
+    theme(axis.line = element_line(colour = "black", linewidth = ONE_PT),
+          axis.ticks = element_line(colour = "black", linewidth = ONE_PT),
+          axis.text = element_text(colour = "black"),
+          plot.title = element_text(hjust = 0.5))
+}
+# Cairo silently substitutes a missing font, so check with fontconfig first.
+if (nzchar(Sys.which("fc-match")) &&
+    !identical(system2("fc-match", c("-f", "%{family}", "Arial"), stdout = TRUE), "Arial")) {
+  stop("Arial is not installed; the figures would fall back to another font.")
+}
+
 # Read in the count matrix and metadata with specified tab separator
 counts <- tryCatch({
     as.matrix(read.table(count_matrix_file, header = TRUE, row.names = 1, sep = "\t"))
@@ -120,13 +139,14 @@ if(use_ercc){
     colnames(ercc_counts_before_melt) <- c("Gene", "Sample", "Count")
 
     p_before <- ggplot(ercc_counts_before_melt, aes(x = Sample, y = Count, color = Gene)) +
-      geom_point() +
-      theme_minimal() +
+      geom_point(size = 3) +
+      theme_manuscript() +
       ggtitle("ERCC Counts Before Normalization") +
       theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis text
-            legend.text = element_text(size = 8))  # Decrease legend text size
+            legend.text = element_text(size = 16))  # Twice the original 8
 
-    ggsave(file.path(results_dir, "deseq2", "ERCC_counts_before_normalization.png"), plot = p_before)
+    ggsave(file.path(results_dir, "deseq2", "ERCC_counts_before_normalization.png"), plot = p_before,
+           width = 14, height = 10, dpi = 300)
 
     # Estimate size factors using ERCC genes
     dds <- estimateSizeFactors(dds, controlGenes = rownames(dds) %in% ercc_genes)
@@ -154,13 +174,14 @@ if(use_ercc){
   colnames(ercc_counts_after_melt) <- c("Gene", "Sample", "Count")
 
   p_after <- ggplot(ercc_counts_after_melt, aes(x = Sample, y = Count, color = Gene)) +
-    geom_point() +
-    theme_minimal() +
+    geom_point(size = 3) +
+    theme_manuscript() +
     ggtitle("ERCC Counts After Normalization") +
     theme(axis.text.x = element_text(angle = 45, hjust = 1),  # Rotate x-axis text
-          legend.text = element_text(size = 8))  # Decrease legend text size
+          legend.text = element_text(size = 16))  # Twice the original 8
 
-  ggsave(file.path(results_dir, "deseq2", "ERCC_counts_after_normalization.png"), plot = p_after)
+  ggsave(file.path(results_dir, "deseq2", "ERCC_counts_after_normalization.png"), plot = p_after,
+         width = 14, height = 10, dpi = 300)
 }
 
 # Continue with DESeq2 analysis
@@ -176,14 +197,17 @@ rld <- rlog(dds, blind = FALSE)
 pcaData <- plotPCA(rld, intgroup = "condition", returnData = TRUE)
 percentVar <- round(100 * attr(pcaData, "percentVar"))
 
-ggplot(pcaData, aes(PC1, PC2, color = condition)) +
-  geom_point(size = 3) +
-  geom_text_repel(aes(label = name)) +
+# Filled points with a 1 pt black outline (stroke is in ggplot2's point units).
+p_pca <- ggplot(pcaData, aes(PC1, PC2, fill = condition)) +
+  geom_point(size = 6, shape = 21, colour = "black", stroke = 1 * 96 / 72 * 2 / .stroke) +
+  geom_text_repel(aes(label = name), size = 7, family = "Arial", box.padding = 0.8) +
+  scale_fill_manual(values = c(STEEL_BLUE, PEACH)) +
   xlab(paste0("PC1: ", percentVar[1], "% variance")) +
   ylab(paste0("PC2: ", percentVar[2], "% variance")) +
   ggtitle("PCA of RNA-seq Samples") +
-  theme_minimal()
+  theme_manuscript()
 
 # Save the PCA plot
-ggsave(filename = file.path(results_dir, "deseq2", "PCA_plot.png"))
+ggsave(filename = file.path(results_dir, "deseq2", "PCA_plot.png"), plot = p_pca,
+       width = 9, height = 8, dpi = 300)
 print("PCA plot saved successfully.")

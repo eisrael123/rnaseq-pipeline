@@ -278,3 +278,34 @@ def test_splicing_bar_chart_draws(tmp_path):
             "FDR\tIncLevelDifference\n0.001\t0.3\n0.001\t-0.2\n0.5\t0.1\n")
     rnaseq.generate_splicing_bar_chart(tmp_path)
     assert sorted(path.name for path in rmats_out.glob("*.png"))
+
+
+def test_figure_style_is_manuscript_ready():
+    """PI review: Arial, text about twice the default, 1 pt black axes and bar outlines."""
+    import pytest
+    matplotlib = pytest.importorskip("matplotlib")
+    from matplotlib import font_manager
+    import figure_style
+    try:
+        font_manager.findfont("Arial", fallback_to_default=False)
+    except ValueError:
+        pytest.skip("Arial not installed (the pipeline image has it)")
+    figure_style.apply()
+    rc = matplotlib.rcParams
+    assert rc["font.sans-serif"][0] == "Arial"
+    assert rc["font.size"] == 2 * matplotlib.rcParamsDefault["font.size"]
+    assert rc["axes.linewidth"] == rc["patch.linewidth"] == 1.0
+    assert rc["axes.edgecolor"] == rc["patch.edgecolor"] == "black"
+
+
+def test_r_figures_share_the_python_figure_style():
+    """The PCA and ERCC plots are drawn in R; keep their font and colours in step."""
+    import re
+    from pathlib import Path
+    import figure_style
+    script = (Path(rnaseq.__file__).parent / "rnaseq_helper_scripts" /
+              "deseq2_analysis_ercc.R").read_text()
+    assert 'base_family = "Arial"' in script
+    assert re.search(r"base_size = 22\b", script)  # 2 x theme_classic's 11
+    for name in ("STEEL_BLUE", "PEACH"):
+        assert f'{name} <- "{getattr(figure_style, name)}"' in script
