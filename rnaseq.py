@@ -1763,6 +1763,8 @@ def organize_artifacts(results_dir, sample_names, experiment_id):
 
     # The per-sample folders, not the kallisto folder itself, or they end up a level deeper.
     move_glob("kallisto/*", artifacts / "kallisto")
+    if (results_dir / "kallisto").is_dir() and not any((results_dir / "kallisto").iterdir()):
+        (results_dir / "kallisto").rmdir()
     # The spreadsheets are what people open, so they sit on top and everything the analysis
     # wrote on the way to them goes in prep_files/, as in the original layout.
     for tool in ("deseq2", "sleuth"):

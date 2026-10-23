@@ -101,9 +101,11 @@ def test_rmats_summary_sits_with_the_jcec_results(tmp_path):
 def test_kallisto_output_is_not_nested_twice(tmp_path):
     """F3: artifacts/kallisto/<sample>/, as in the original 04_abundance_estimation/kallisto/,
     not artifacts/kallisto/kallisto/<sample>/."""
-    kallisto = _organized(tmp_path) / "artifacts" / "kallisto"
+    results_dir = _organized(tmp_path)
+    kallisto = results_dir / "artifacts" / "kallisto"
     assert (kallisto / SAMPLE / f"{SAMPLE}_hg38" / "abundance.tsv").is_file()
     assert not (kallisto / "kallisto").exists()
+    assert not (results_dir / "kallisto").exists()
 
 
 def test_de_spreadsheets_are_kept_apart_from_prep_files(tmp_path):
