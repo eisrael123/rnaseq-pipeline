@@ -448,6 +448,10 @@ never one column per sample. Missing values are the literal string `NA`. Every r
   heap through `JVM_MEM_OPTS`; before, the conda `gsea-cli` silently capped it at 4 GB, which
   is too small for that file. (The original pipeline's hand-installed `gsea-cli.sh` had
   `-Xmx12g` written into it.)
+- Figures (volcano, PCA, splicing bar charts, ERCC) are drawn for publication: Arial, text
+  about twice the old size, 1 pt black axes and bar outlines, 300 dpi, and colours from the
+  lab's 2026 bioRxiv preprint (Nguyen et al.). See `rnaseq_helper_scripts/figure_style.py`.
+- No CPM bigWigs are written any more; `signal_over_gene` is still in CPM.
 - `results.html` is now `reports/report.html`. Its strandedness row uses the original words
   with the canonical name alongside: `rf-stranded (fr-firststrand)`,
   `fr-stranded (fr-secondstrand)`, `unstranded`.
