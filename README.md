@@ -264,8 +264,9 @@ Optional:
   when the GTF has no version in its header and no `ANNOTATION_VERSION` marker file.
 - `--skip-transcript-expression`: write `expression_transcript.tsv` with headers only. It is by
   far the largest table.
-- `--normalization`: bigWig normalization. Leave at the default; it has to be uniform across
-  runs for tracks to be comparable.
+- `--normalization`: normalization of `signal_over_gene`. Leave at the default; it has to be
+  uniform across runs for those values to be comparable. The bigWigs in `artifacts/bigwig/` are
+  always raw counts.
 
 
 ### 1) Run interactively (recommended first run)
@@ -392,17 +393,21 @@ before this layout existed is recorded in [docs/CURRENT_OUTPUTS.md](docs/CURRENT
 ├── checksums.sha256
 ├── tables/             the machine-readable results; this is what the warehouse reads
 ├── artifacts/          raw tool output, bigWigs and BAMs, kept for re-analysis
-│   ├── bigwig/unique/        CPM bigWigs, uniquely mapped reads
-│   ├── bigwig/uniquemulti/   CPM bigWigs, unique + multi-mapped reads
+│   ├── bigwig/unique/        raw-count bigWigs, uniquely mapped reads
+│   ├── bigwig/uniquemulti/   raw-count bigWigs, unique + multi-mapped reads
 │   └── rmats_raw/JCEC/       the five *.MATS.JCEC.txt results (rest of rMATS in rmats_raw/)
-├── raw_count_bigwigs/  unscaled read-count bigWigs (unique/, uniquemulti/) + raw_count_manifest.tsv
 ├── reports/            XLSX, figures and report.html, for reading rather than querying
 └── logs/               one log per stage
 ```
 
-`raw_count_bigwigs/` is not part of the run's `checksums.sha256` (its own manifest carries a
-SHA-256 per file): the lab's update kit uploads it to `raw_count_bigwigs/<experiment>/` on the
-share, next to `pipeline_output/`, rather than into the experiment folder.
+No normalized bigWigs are written; normalize downstream if needed. `signal_over_gene` is still
+in CPM, so its values are comparable between samples: it is computed from the raw tracks and
+multiplied by each sample's CPM factor (1e6 / mapped reads).
+
+Runs made before raw counts became the main tracks (all 70 experiments in the archive as of
+October 2026) have CPM bigWigs in `artifacts/bigwig/` and raw copies in a separate
+`raw_count_bigwigs/<experiment>/` folder on the share. Those raw copies were reconstructed
+from the CPM tracks (CPM ÷ `scale_factor`, rounded), not taken from STAR.
 
 Everything in `tables/` is a TSV in long format: one row per gene, transcript, event or metric,
 never one column per sample. Missing values are the literal string `NA`. Every row carries a
@@ -416,17 +421,52 @@ never one column per sample. Missing values are the literal string `NA`. Every r
 - bigWigs are named `<sample_id>.<content>.<build>.<strand>.bw`. STAR's `str1`/`str2` no longer
   appears anywhere: which one is the plus strand depends on the library chemistry, so it is
   resolved from the RSeQC call and written into the filename and the manifest.
-- bigWig values are CPM-normalized. Minus-strand tracks hold **negative** values (plus and
-  unstranded tracks are positive), so they mirror below the axis in a genome browser. To compare
-  coverage between genes or tracks, use the absolute value; `signal_over_gene` reports positive
-  magnitudes on every strand.
+- bigWig values are STAR's raw counts, as before (whole reads for unique, 1/N fractions for
+  multi-mappers). Minus-strand tracks hold **negative** values (plus and unstranded tracks are
+  positive), so they mirror below the axis in a genome browser. To compare coverage between
+  genes or tracks, use the absolute value; `signal_over_gene` reports positive magnitudes on
+  every strand.
 - bigWigs are split by content into `artifacts/bigwig/unique/` and
-  `artifacts/bigwig/uniquemulti/`, and each has an unscaled raw-count twin in
-  `raw_count_bigwigs/<content>/<name>.raw.bw`: STAR's own counts (whole reads for unique,
-  1/N fractions for multi-mappers), minus strand negative. Raw ≈ CPM ÷ `scale_factor` (CPM is stored to 6 digits).
-- rMATS's five `*.MATS.JCEC.txt` files are in `artifacts/rmats_raw/JCEC/`.
-- Output filenames are no longer rewritten after the fact. The four `rename_*` passes are gone,
-  along with the naming inconsistencies they caused.
+  `artifacts/bigwig/uniquemulti/`, as the original `1_unique/` and `2_unique_multiple/` were.
+- Unstranded libraries get one `unstranded` bigWig per content type, rebuilt from the BAM,
+  instead of the original's two positive `str1`/`str2` tracks. Each holds all of the sample's
+  reads.
+- rMATS's five `*.MATS.JCEC.txt` files and `summary.txt` are in `artifacts/rmats_raw/JCEC/`, as
+  in the original `1_JCEC/`; the JC files and intermediates are in `artifacts/rmats_raw/`.
+- Files people open carry the experiment name, as the original's rename passes gave them:
+  `<experiment>_test_vs_cntl_` on figures and the JCEC files, `<experiment>_deseq2_` and
+  `<experiment>_sleuth_` on DESeq2 and Sleuth output (except `deseq2_metadata.tsv`), and
+  `<experiment>_de_gene.xlsx`. The summary tables and `report.html` are unprefixed, as before.
+  Runs made between the refactor and October 2026 have unprefixed names.
+- The DESeq2 and Sleuth XLSX files are at the top of `artifacts/deseq2/` and
+  `artifacts/sleuth/`; everything else those tools wrote is in `prep_files/` below them.
+- kallisto output is in `artifacts/kallisto/<sample>/`. Runs made between the refactor and
+  October 2026 have it one level deeper, in `artifacts/kallisto/kallisto/<sample>/`.
+- GSEA runs every gene set collection in the reference folder, as the original did, including
+  the full `gene_ontology` GMT, the only one with the cellular-component sets. Runs made
+  between commit 9ea83ea (July 2026) and October 2026 skipped it. GSEA now gets a 16 GB Java
+  heap through `JVM_MEM_OPTS`; before, the conda `gsea-cli` silently capped it at 4 GB, which
+  is too small for that file. (The original pipeline's hand-installed `gsea-cli.sh` had
+  `-Xmx12g` written into it.)
+- Figures (volcano, PCA, splicing bar charts, ERCC) are drawn for publication: Arial, text
+  about twice the old size, 1 pt black axes and bar outlines, 300 dpi, and colours from the
+  lab's 2026 bioRxiv preprint (Nguyen et al.). See `rnaseq_helper_scripts/figure_style.py`.
+- No CPM bigWigs are written any more; `signal_over_gene` is still in CPM.
+- `results.html` is now `reports/report.html`. Its strandedness row uses the original words
+  with the canonical name alongside: `rf-stranded (fr-firststrand)`,
+  `fr-stranded (fr-secondstrand)`, `unstranded`.
+- If RSeQC cannot determine a sample's strandedness, the sample is analysed as unstranded, as
+  in the original, and the run says so: a warning on the terminal and in the log, a note in the
+  RSeQC file, `strandedness_fallback` in the manifest, and a label in `report.html`.
+  `metadata.tsv` keeps the measured value, `undetermined`.
+- kallisto runs in Docker use an index rebuilt in April 2026 with kallisto 0.52.0. Runs on
+  macOS use the original (`*_ORIGINAL.kallisto.idx`). The two can give slightly different
+  abundances, so the manifest records the index path and SHA-256 under
+  `parameters.kallisto_index`.
+- If a spreadsheet, figure, junction BED, `report.html` or GSEA collection fails, the run still
+  finishes, but the failure is an error: it is printed on the terminal, written to
+  `logs/errors.log`, recorded in the manifest's `output_errors`, and fails validation, so the
+  run exits non-zero. The original pipeline stopped at the first such failure.
 
 ## Validating a run
 
@@ -439,8 +479,9 @@ python rnaseq_helper_scripts/validate_outputs.py /data/output
 
 It fails on a missing or incomplete manifest, a table whose columns do not match the schema, a
 `sample_id` that is not in `metadata.tsv`, a gene ID that is neither an unversioned Ensembl
-accession nor a listed exception, a splicing replicate with no parent event, and any checksum
-that no longer matches. Legitimate non-Ensembl IDs — ERCC spike-ins, EBV and KSHV loci — belong
+accession nor a listed exception, a splicing replicate with no parent event, any checksum
+that no longer matches, a researcher-facing output the run recorded as failed
+(`output_errors`), and a missing DESeq2 XLSX, volcano plot or `report.html`. Legitimate non-Ensembl IDs — ERCC spike-ins, EBV and KSHV loci — belong
 in `docs/gene_id_exceptions.txt`.
 
 ## Development

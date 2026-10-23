@@ -6,10 +6,8 @@ replicate 1 (L05), while deseq2_metadata.tsv followed metadata.tsv's replicate_i
 """
 
 import pandas as pd
-import pytest
 
-pytest.importorskip("matplotlib")  # rnaseq.py imports it at module level
-rnaseq = pytest.importorskip("rnaseq")
+import rnaseq
 
 
 def _metadata(rows):

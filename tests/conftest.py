@@ -16,6 +16,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT / "rnaseq_helper_scripts"))
+sys.path.insert(0, str(REPO_ROOT))  # rnaseq.py, for tests of the driver's own functions
 
 import checksums  # noqa: E402
 import tables_de  # noqa: E402
@@ -240,7 +241,7 @@ def _bigwig_rows(ctx: RunContext, results_dir: Path) -> list[dict]:
                     "run_id": ctx.run_id, "sample_id": sample_id,
                     "file_path": path.relative_to(results_dir).as_posix(),
                     "content": content, "strand": strand, "genome_build": GENOME_BUILD,
-                    "normalization": "cpm", "scale_factor": 0.625,
+                    "normalization": "raw", "scale_factor": 1.0,
                     "sha256": sha256_file(path), "bytes": path.stat().st_size,
                 })
     return rows
@@ -275,7 +276,7 @@ def build_manifest(results_dir: Path, run_id: str = RUN_ID) -> dict:
         "run_start_utc": "2026-01-15T10:00:00Z", "run_end_utc": "2026-01-15T18:00:00Z",
         "exit_status": "success", "gene_id_source": "ensembl",
         "tool_versions": {"STAR": "2.7.11b", "kallisto": "0.52.0"},
-        "parameters": {"deseq2_alpha": 0.05},
+        "parameters": {"deseq2_alpha": 0.1},
     }
     (results_dir / "run_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
     return manifest
@@ -321,6 +322,12 @@ def built_results(tmp_path_factory) -> dict:
         source = results_dir / stage
         if source.is_dir():
             source.rename(results_dir / "artifacts" / source.name)
+
+    # The researcher-facing files the validator requires; their content is not checked.
+    (results_dir / "artifacts" / "deseq2" / f"{EXPERIMENT_ID}_deseq2_results_genes.xlsx"
+     ).write_bytes(b"xlsx")
+    for name in (f"{EXPERIMENT_ID}_test_vs_cntl_volcano_plot.png", "report.html"):
+        (results_dir / "reports" / name).write_bytes(b"report")
 
     checksums.write_checksums(results_dir,
                               known={row["file_path"]: row["sha256"] for row in bigwig_rows})

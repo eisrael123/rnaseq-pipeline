@@ -339,7 +339,8 @@ JUNCTION = _register(Table(
 BIGWIG_MANIFEST = _register(Table(
     name="bigwig_manifest",
     subdir="tables",
-    description="Authoritative description of every bigWig. Filenames are cosmetic; this is not.",
+    description="Authoritative description of every bigWig in `artifacts/bigwig/` (raw STAR "
+                "counts). Filenames are cosmetic; this is not.",
     grain="one row per bigWig file",
     key_columns=("run_id", "file_path"),
     columns=(

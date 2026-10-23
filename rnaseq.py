@@ -14,13 +14,9 @@ import pandas as pd
 import sys
 import resource
 import time
-soft, hard = 10000, 10000
-resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
 import shutil
 import tempfile
 import json
-import matplotlib.pyplot as plt
-from matplotlib import rcParams
 import re
 import argparse
 
@@ -39,7 +35,7 @@ import tables_qc
 import tables_rmats
 import validate_outputs
 from annotation import Annotation
-from outputs import RunContext, create_layout, stage_log_path
+from outputs import RunContext, create_layout, sha256_file, stage_log_path
 from schemas import PIPELINE_VERSION
 
 REQUIRED_ENV = "rnaseqpipeline"
@@ -59,17 +55,32 @@ STAR_COMMON_ARGS = [
 ]
 KALLISTO_COMMON_ARGS = ["-b", "100", "-t", "10"]
 RMATS_COMMON_ARGS = ["--variable-read-length", "--nthread", "10"]
-DESEQ2_ALPHA = 0.05
+# Recorded in the manifest, not passed to R: deseq2_analysis_ercc.R calls results(dds) with
+# DESeq2's default alpha (0.1, the FDR target for independent filtering), as the original did.
+DESEQ2_ALPHA = 0.1
 
-# Check if running in the right conda env
-conda_env = os.environ.get("CONDA_DEFAULT_ENV")
-if conda_env != REQUIRED_ENV:
-    sys.stderr.write(
-        f"\nERROR: This script must be run inside the '{REQUIRED_ENV}' conda environment.\n"
-        f"Currently active environment: {conda_env or 'None'}\n"
-        f"Please run:\n\n    conda activate {REQUIRED_ENV}\n\n"
-    )
-    sys.exit(1)
+def check_environment():
+    """Refuse to run outside the pipeline's conda env, and raise the open-file limit.
+
+    Called from main() rather than at import time, so the tests can import this module without
+    the bioinformatics stack.
+    """
+    conda_env = os.environ.get("CONDA_DEFAULT_ENV")
+    if conda_env != REQUIRED_ENV:
+        sys.stderr.write(
+            f"\nERROR: This script must be run inside the '{REQUIRED_ENV}' conda environment.\n"
+            f"Currently active environment: {conda_env or 'None'}\n"
+            f"Please run:\n\n    conda activate {REQUIRED_ENV}\n\n"
+        )
+        sys.exit(1)
+    soft, hard = 10000, 10000
+    resource.setrlimit(resource.RLIMIT_NOFILE, (soft, hard))
+
+def notify(message):
+    """Print to logs/pipeline.log and, when stdout is redirected there, to the terminal too."""
+    print(message)
+    if sys.__stderr__ is not None and sys.stdout is not sys.__stdout__:
+        sys.__stderr__.write(message + "\n")
 
 def sample_sort_key(name: str):
     # natural sort on trailing integer if present
@@ -227,11 +238,15 @@ def post_process_alignment(sample_name, star_results_dir):
     return sorted_bam
 
 def infer_strandedness(sorted_bam, species, results_dir):
-    """Infer library strandedness with RSeQC and return the canonical library type.
+    """Infer library strandedness with RSeQC and return the library type to analyse with.
 
     The raw RSeQC output is kept verbatim for the record; the interpretation is appended as a
     single machine-readable line. Every consumer reads it back through
     ``strandedness.parse_rseqc`` rather than string-matching this file.
+
+    If RSeQC cannot tell, the sample is analysed as unstranded, as in the original pipeline,
+    and a note goes into the RSeQC file, the log and the terminal; main() also records it in
+    the manifest and report.html shows it.
     """
     rseqc_dir = results_dir / "rseqc"
     os.makedirs(rseqc_dir, exist_ok=True)
@@ -243,18 +258,41 @@ def infer_strandedness(sorted_bam, species, results_dir):
     print(f"Running RSeQC infer_experiment.py: {' '.join(infer_command)}")
     result = subprocess.run(infer_command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
 
-    parsed = strandedness_module.parse_rseqc(result.stdout)
+    measured = strandedness_module.parse_rseqc(result.stdout)["library_type"]
+    analysed = strandedness_module.analysed_library_type(measured)
     with open(output_file, "w") as outfile:
         outfile.write(result.stdout)
-        outfile.write(f"\n{strandedness_module.CANONICAL_LINE} {parsed['library_type']}\n")
+        outfile.write(f"\n{strandedness_module.CANONICAL_LINE} {analysed}\n")
+        if analysed != measured:
+            outfile.write(f"{strandedness_module.FALLBACK_LINE}\n")
 
-    if parsed["library_type"] == strandedness_module.UNDETERMINED:
-        raise RuntimeError(
-            f"RSeQC could not determine strandedness for {sorted_bam.name}. Strand-resolved "
-            f"bigWigs and rMATS both depend on it, so the run is stopping rather than "
-            f"guessing. See {output_file}."
-        )
-    return parsed["library_type"]
+    if analysed != measured:
+        notify(f"WARNING: RSeQC could not determine strandedness for {sorted_bam.name}; "
+               f"analysing it as unstranded (one unstranded bigWig per content type, "
+               f"kallisto and rMATS unstranded). See {output_file}.")
+    return analysed
+
+def kallisto_index_path(species_name, is_contaminant_run=False):
+    """The kallisto index for the species or the contaminant panel.
+
+    On macOS (local runs) this is the ORIGINAL index the pre-container pipeline used; in Docker
+    it is the index rebuilt in April 2026, so the two can give slightly different abundances.
+    The manifest records which one a run used (kallisto_index_record).
+    """
+    stem = "all_contaminants" if is_contaminant_run else species_name
+    if platform.system() == "Darwin":
+        stem += "_ORIGINAL"
+    return REFERENCE_DIR / species_name / "kallisto" / f"{stem}.kallisto.idx"
+
+def kallisto_index_record(species_name):
+    """Path and SHA-256 of each kallisto index, for the manifest. Reads every index once
+    (a few GB), which is small next to the run itself."""
+    record = {}
+    for label, contaminants in (("species", False), ("contaminants", True)):
+        path = kallisto_index_path(species_name, contaminants)
+        record[label] = {"path": str(path),
+                         "sha256": sha256_file(path) if path.is_file() else "missing"}
+    return record
 
 def run_kallisto(fastq1, fastq2, sample_name, species_name, strandedness, results_dir, is_contaminant_run=False):
     """Run kallisto quant to measure abundance for species or contaminants."""
@@ -263,22 +301,9 @@ def run_kallisto(fastq1, fastq2, sample_name, species_name, strandedness, result
     kallisto_dir = results_dir / "kallisto" / sample_name / output_subdir
     kallisto_dir.mkdir(parents=True, exist_ok=True)
 
-    # Use the appropriate kallisto index based on species or contaminants.
-    # On macOS (local runs), use the ORIGINAL idx that was built. On Docker, use the new idx.
-    if is_contaminant_run:
-        if platform.system() == "Darwin": #Mac
-            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / "all_contaminants_ORIGINAL.kallisto.idx"
-            print(f"Kallisto contaminants: using index {kallisto_index}")
-        else: #Docker
-            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / "all_contaminants.kallisto.idx"
-            print(f"Kallisto contaminants: using index {kallisto_index}")
-    else:
-        if platform.system() == "Darwin": #Mac
-            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / f"{species_name}_ORIGINAL.kallisto.idx"
-            print(f"Kallisto species: using index {kallisto_index}")
-        else: #Docker
-            kallisto_index = REFERENCE_DIR / species_name / "kallisto" / f"{species_name}.kallisto.idx"
-            print(f"Kallisto species: using index {kallisto_index}")
+    kallisto_index = kallisto_index_path(species_name, is_contaminant_run)
+    print(f"Kallisto {'contaminants' if is_contaminant_run else 'species'}: using index "
+          f"{kallisto_index}")
 
     stranded_option = strandedness_module.kallisto_option(strandedness)
 
@@ -747,6 +772,28 @@ def create_gsea_cls_file(metadata, results_dir, species_name):
         print(f"Error saving GSEA class file '{gsea_cls_file}': {e}")
         sys.exit(1)
 
+def gsea_gmt_files(gmt_dir):
+    """Every gene set collection in the reference GSEA folder, as the original pipeline ran.
+
+    This includes the full ``gene_ontology`` GMT. It is not redundant with the
+    biological_process and molecular_function files: it is the only one that carries the
+    cellular-component sets.
+    """
+    return sorted(Path(gmt_dir).glob("*.gmt"))
+
+GSEA_HEAP = "-Xmx16g"
+
+def gsea_env(environ=None):
+    """Environment for gsea-cli with a heap large enough for the full gene_ontology GMT.
+
+    gsea-cli launches java with ``${JVM_MEM_OPTS:-"-Xmx4g"}`` on the command line, and a
+    command-line -Xmx overrides JAVA_TOOL_OPTIONS, so the heap has to be set through
+    JVM_MEM_OPTS. At 4 GB the full GO collection fails with OutOfMemoryError.
+    """
+    env = dict(os.environ if environ is None else environ)
+    env.setdefault("JVM_MEM_OPTS", GSEA_HEAP)
+    return env
+
 def run_gsea(results_dir, gsea_dir_name, species_name):
     """Run GSEA for each .gmt file in the referenceFiles/{species}/GSEA directory."""
 
@@ -762,28 +809,12 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
     if not gsea_cli_path:
         raise FileNotFoundError("Neither gsea-cli nor gsea-cli.sh was found in PATH.")
 
-    gmt_files = sorted(gsea_reference_dir.glob("*.gmt"))
-    stems = {p.stem.lower() for p in gmt_files}
-    # MSigDB ships GO both as the full C5 collection and as BP/MF/CC splits. The reference
-    # tree has gene_ontology plus biological_process and molecular_function; the full set is
-    # redundant, much larger, and is what OOM'd / crashed the smoke run after the splits had
-    # already succeeded. Skip it when the splits are present.
-    skip_full_go = (
-        any(s.startswith("gene_ontology") for s in stems)
-        and any(s.startswith("biological_process") for s in stems)
-        and any(s.startswith("molecular_function") for s in stems)
-    )
+    gmt_files = gsea_gmt_files(gsea_reference_dir)
 
-    # GSEA is a fat Java process; conda's default heap is too small for the largest GMTs.
-    env = os.environ.copy()
-    if "GSEA_JVM_HEAP" not in env and "JAVA_TOOL_OPTIONS" not in env:
-        env["JAVA_TOOL_OPTIONS"] = "-Xmx16g"
+    env = gsea_env()
 
+    failed = []
     for gmt_file in gmt_files:
-        if skip_full_go and gmt_file.stem.lower().startswith("gene_ontology"):
-            print(f"Skipping {gmt_file.name}: covered by biological_process + "
-                  f"molecular_function collections already in this reference set.")
-            continue
         rpt_label = gmt_file.stem
         command = [
             gsea_cli_path, "GSEA",
@@ -808,6 +839,8 @@ def run_gsea(results_dir, gsea_dir_name, species_name):
                 print(e.stderr[-2000:])
             if e.stdout:
                 print(e.stdout[-1000:])
+            failed.append(gmt_file.name)
+    return failed
 
 def create_rnk_file(results_dir):
     """
@@ -882,10 +915,7 @@ def run_gsea_preranked(rnk_file, gsea_results_dir, gmt_file):
     ]
 
     try:
-        env = os.environ.copy()
-        if "GSEA_JVM_HEAP" not in env and "JAVA_TOOL_OPTIONS" not in env:
-            env["JAVA_TOOL_OPTIONS"] = "-Xmx16g"
-        subprocess.run(cmd, check=True, env=env, capture_output=True, text=True)
+        subprocess.run(cmd, check=True, env=gsea_env(), capture_output=True, text=True)
         print(f"✅ GSEA pre-ranked analysis completed successfully for '{gmt_file}'")
         return True
     except subprocess.CalledProcessError as e:
@@ -1034,6 +1064,11 @@ def generate_splicing_bar_chart(results_dir):
     Parameters:
     - results_dir (str or Path): The directory where the results are stored.
     """
+    # Only needed here; importing them inside keeps the module importable in CI.
+    import matplotlib.pyplot as plt
+    import figure_style
+    figure_style.apply()
+
     rmats_out_dir = Path(results_dir) / "rmats" / "rmats_out"
 
     # Load data
@@ -1082,19 +1117,14 @@ def generate_splicing_bar_chart(results_dir):
         y1 = [yp1, yp2, yp3, yp4, yp5]
         y2 = [yn1, yn2, yn3, yn4, yn5]
 
-        # Plot bars in stacked manner
-        rcParams['font.family'] = 'sans-serif'
-        rcParams['font.sans-serif'] = ['Arial']
-        frameon = False
-        plt.bar(x, y1, color='c', label='positive', edgecolor='k', linewidth=0.25)
-        plt.bar(x, y2, bottom=y1, color='salmon', label='negative', edgecolor='k', linewidth=0.25)
-        ax = plt.gca()
-        ax.spines['top'].set_visible(False)
-        ax.spines['right'].set_visible(False)
-        plt.ylabel("Number of altered splicing events")
+        # Plot bars in stacked manner (style: figure_style)
+        plt.figure(figsize=(8, 7))
+        plt.bar(x, y1, color=figure_style.PALE_BLUE, label='positive')
+        plt.bar(x, y2, bottom=y1, color=figure_style.STEEL_BLUE, label='negative')
+        plt.ylabel("Number of altered\nsplicing events")
         plt.legend(loc='upper left')
-        plt.title(f"rMATS Alternative Splicing Events FDR {fdr_threshold}")
-        plt.savefig(output_file, dpi=300)
+        plt.title(f"rMATS Alternative Splicing Events\nFDR {fdr_threshold}")
+        plt.savefig(output_file)
         plt.close()
 
     # Generate bar charts for FDR 0.05 and FDR 0.0005
@@ -1523,6 +1553,22 @@ def summarize_transcript_coverage(results_dir, sample_names, species_name):
             else:
                 print(f"Warning: {run_info_file} does not exist")
 
+# report.html keeps the original pipeline's words, which people know, with the canonical name
+# alongside. "fr-firststrand" on its own reads too much like the old "fr-stranded", which meant
+# the opposite chemistry.
+REPORT_STRANDEDNESS_LABELS = {
+    strandedness_module.FR_FIRSTSTRAND: "rf-stranded (fr-firststrand)",
+    strandedness_module.FR_SECONDSTRAND: "fr-stranded (fr-secondstrand)",
+    strandedness_module.UNSTRANDED: "unstranded",
+    strandedness_module.UNDETERMINED:
+        "unstranded (RSeQC could not determine; analysed as unstranded)",
+}
+
+def strandedness_label(rseqc_text):
+    """How report.html describes a sample's strandedness."""
+    measured = strandedness_module.parse_rseqc(rseqc_text)["library_type"]
+    return REPORT_STRANDEDNESS_LABELS[measured]
+
 def generate_results_html(results_dir, sample_names):
     results_file = results_dir / "reports" / "report.html"
     results_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1552,8 +1598,7 @@ def generate_results_html(results_dir, sample_names):
     for sample_name in sample_names:
         strandedness_file = strandedness_module.rseqc_path(results_dir, sample_name)
         if strandedness_file.exists():
-            parsed = strandedness_module.parse_rseqc(strandedness_file.read_text())
-            strandedness_report.append(parsed["library_type"])
+            strandedness_report.append(strandedness_label(strandedness_file.read_text()))
 
     # Read the alignment summary
     alignment_summary = []
@@ -1669,13 +1714,13 @@ def generate_results_html(results_dir, sample_names):
     with open(results_file, 'w') as f:
         f.write(html_content)
 
-def organize_artifacts(results_dir, sample_names):
-    """Move raw tool output under artifacts/ and reports under reports/.
+def organize_artifacts(results_dir, sample_names, experiment_id):
+    """Move raw tool output under artifacts/ and reports under reports/, then put the
+    experiment name on the files people open (prefix_experiment_name).
 
-    Replaces the old 1_Preprocessing/2_Analysis/3_Results tree and the four post-hoc renaming
-    passes. Filenames here are cosmetic: tables/ is the contract surface and the manifests are
-    authoritative, so nothing downstream parses these paths. Raw rMATS and STAR output is moved,
-    never deleted.
+    Replaces the old 1_Preprocessing/2_Analysis/3_Results tree. Filenames here are for people:
+    tables/ is the contract surface and the manifests are authoritative, so nothing downstream
+    parses these paths. Raw rMATS and STAR output is moved, never deleted.
     """
     results_dir = Path(results_dir)
     artifacts = results_dir / "artifacts"
@@ -1712,14 +1757,22 @@ def organize_artifacts(results_dir, sample_names):
     for pattern in ("deseq2/*.png", "rmats/rmats_out/*.png"):
         move_glob(pattern, results_dir / "reports")
 
-    move_into(results_dir / "kallisto", artifacts / "kallisto")
+    # The per-sample folders, not the kallisto folder itself, or they end up a level deeper.
+    move_glob("kallisto/*", artifacts / "kallisto")
+    if (results_dir / "kallisto").is_dir() and not any((results_dir / "kallisto").iterdir()):
+        (results_dir / "kallisto").rmdir()
+    # The spreadsheets are what people open, so they sit on top and everything the analysis
+    # wrote on the way to them goes in prep_files/, as in the original layout.
+    for tool in ("deseq2", "sleuth"):
+        move_glob(f"{tool}/*.xlsx", artifacts / tool)
+        move_glob(f"{tool}/*", artifacts / tool / "prep_files")
     for pattern, destination in (
-        ("deseq2/*", artifacts / "deseq2"),
-        ("sleuth/*", artifacts / "sleuth"),
         ("gsea/*", artifacts / "gsea"),
         # The per-event-type JCEC results are the ones people open; keep them apart from the
         # JC files and rMATS intermediates so the wrong file is hard to pick up.
         ("rmats/rmats_out/*.MATS.JCEC.txt", artifacts / "rmats_raw" / "JCEC"),
+        # summary.txt counts the events in those files; the original 1_JCEC folder held it too.
+        ("rmats/rmats_out/summary.txt", artifacts / "rmats_raw" / "JCEC"),
         ("rmats/rmats_out/*", artifacts / "rmats_raw"),
         ("rmats/rmats_tmp", artifacts / "rmats_raw"),
         ("rmats/*.txt", artifacts / "rmats_raw"),
@@ -1731,6 +1784,7 @@ def organize_artifacts(results_dir, sample_names):
                  "Rplots.pdf"):
         move_into(results_dir / name, results_dir / "reports")
     move_glob("*.png", results_dir / "reports")
+    prefix_experiment_name(results_dir, experiment_id)
 
     # Everything worth keeping has been moved; what is left is scratch.
     for scratch in ("star", "deseq2", "sleuth", "gsea", "rmats"):
@@ -1743,6 +1797,43 @@ def organize_artifacts(results_dir, sample_names):
     # a good analysis over desktop detritus.
     for junk in results_dir.rglob(".DS_Store"):
         junk.unlink(missing_ok=True)
+
+def prefix_experiment_name(results_dir, experiment_id):
+    """Put the experiment name in front of the files people open and share, as the original
+    pipeline's rename passes did, so a copied-out file still says where it came from and two
+    experiments' spreadsheets can be open in Excel at once.
+
+    Same names as the original: figures and the rMATS JCEC results get
+    ``<experiment>_test_vs_cntl_``; DESeq2 and Sleuth output gets ``<experiment>_<tool>_``
+    (deseq2_metadata.tsv excepted, as before). Already-prefixed files are left alone, so a
+    resumed run does not double the prefix.
+    """
+    results_dir = Path(results_dir)
+    artifacts = results_dir / "artifacts"
+    contrast_prefix = f"{experiment_id}_test_vs_cntl_"
+
+    def rename(path, new_name):
+        if path.name.startswith(f"{experiment_id}_"):
+            return
+        path.rename(path.with_name(new_name))
+
+    for folder, pattern in ((artifacts / "rmats_raw" / "JCEC", "*"),
+                            (results_dir / "reports", "*.png")):
+        for path in sorted(folder.glob(pattern)):
+            if path.is_file():
+                rename(path, contrast_prefix + path.name)
+
+    for tool in ("deseq2", "sleuth"):
+        for folder in (artifacts / tool, artifacts / tool / "prep_files"):
+            for path in sorted(folder.glob("*")):
+                if not path.is_file() or path.name == "deseq2_metadata.tsv":
+                    continue
+                rest = path.name[len(tool) + 1:] if path.name.startswith(f"{tool}_") else path.name
+                rename(path, f"{experiment_id}_{tool}_{rest}")
+
+    de_gene_xlsx = results_dir / "reports" / "de_gene.xlsx"
+    if de_gene_xlsx.is_file():
+        rename(de_gene_xlsx, f"{experiment_id}_de_gene.xlsx")
 
 def process_sample(sample_name, fastq1, fastq2):
     import datetime
@@ -1985,20 +2076,10 @@ def order_mycoplasma_report(results_dir, sample_names):
 def run_enrichment(metadata, results_dir, species_name):
     """Run GSEA, pre-ranked when a condition has fewer than three replicates.
 
-    Returns the mode used so the manifest records which flavour of GSEA produced
-    gene_set_enrichment.tsv.
+    Returns the mode used, so the manifest records which flavour of GSEA produced
+    gene_set_enrichment.tsv, and the GMT files GSEA failed on.
     """
-    gmt_dir = REFERENCE_DIR / species_name / "GSEA"
-    gmt_files = sorted(gmt_dir.glob("*.gmt"))
-    stems = {p.stem.lower() for p in gmt_files}
-    skip_full_go = (
-        any(s.startswith("gene_ontology") for s in stems)
-        and any(s.startswith("biological_process") for s in stems)
-        and any(s.startswith("molecular_function") for s in stems)
-    )
-    if skip_full_go:
-        gmt_files = [p for p in gmt_files
-                     if not p.stem.lower().startswith("gene_ontology")]
+    gmt_files = gsea_gmt_files(REFERENCE_DIR / species_name / "GSEA")
 
     condition_counts = metadata.groupby('condition')['Sample name'].nunique()
     if (condition_counts < 3).any():
@@ -2008,15 +2089,15 @@ def run_enrichment(metadata, results_dir, species_name):
         if not rnk_file:
             raise RuntimeError("unable to create the .rnk file for GSEA pre-ranked analysis")
         gsea_results_dir = results_dir / "gsea"
-        for gmt_file in gmt_files:
-            run_gsea_preranked(rnk_file, gsea_results_dir, gmt_file)
+        failed = [gmt_file.name for gmt_file in gmt_files
+                  if not run_gsea_preranked(rnk_file, gsea_results_dir, gmt_file)]
         mode = "preranked"
     else:
         print("3 or more replicates detected for all conditions. Running standard GSEA "
               "workflow.")
         create_gsea_input_file(metadata, results_dir, species_name)
         create_gsea_cls_file(metadata, results_dir, species_name)
-        run_gsea(results_dir, "gsea", species_name)
+        failed = run_gsea(results_dir, "gsea", species_name)
         mode = "standard"
 
     # GSEA creates an empty mmmDD directory in the working directory on some runs.
@@ -2025,20 +2106,40 @@ def run_enrichment(metadata, results_dir, species_name):
     if month_day_folder.is_dir() and not any(month_day_folder.iterdir()):
         shutil.rmtree(month_day_folder)
         print(f"Removed empty GSEA folder: {month_day_folder}")
-    return mode
+    return mode, failed
 
+
+def record_output_errors(results_dir, errors):
+    """Make researcher-facing output failures impossible to miss.
+
+    The run still finishes, so the tables and every output that did work are kept, but each
+    failure goes to logs/errors.log and to the terminal, and main() records them in the
+    manifest's ``output_errors``, which fails validation. The original pipeline stopped at the
+    first such failure; before this change they were a WARNING line in pipeline.log.
+    """
+    if not errors:
+        return
+    with open(stage_log_path(results_dir, "errors"), "a") as log:
+        for error in errors:
+            log.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')}\toutput\t{error}\n")
+    notify(f"\nERROR: {len(errors)} researcher-facing output(s) failed and are missing or "
+           f"incomplete:\n" + "".join(f"  - {error}\n" for error in errors) +
+           f"See {stage_log_path(results_dir, 'errors')}.")
 
 def write_human_readable_outputs(metadata_file, results_dir, sample_names, species_name):
     """Figures, spreadsheets and the HTML report.
 
-    These are conveniences layered on top of the contract tables, so a failure here is reported
-    but does not discard a completed run's results.
+    A failure here does not stop the run, but it is returned so main() can report it as an
+    error (see record_output_errors).
     """
+    errors = []
+
     def optional(label, function, *arguments):
         try:
             function(*arguments)
-        except Exception as error:  # noqa: BLE001 - cosmetic outputs must not abort the run
-            print(f"WARNING: {label} failed: {type(error).__name__}: {error}")
+        except Exception as error:  # noqa: BLE001 - one bad output must not discard the rest
+            print(f"ERROR: {label} failed: {type(error).__name__}: {error}")
+            errors.append(f"{label}: {type(error).__name__}: {error}")
 
     collate_tpms(results_dir, sample_names, species_name)
     optional("DESeq2 wide merge", merge_deseq2_results, results_dir)
@@ -2063,6 +2164,7 @@ def write_human_readable_outputs(metadata_file, results_dir, sample_names, speci
     optional("transcript coverage summary", summarize_transcript_coverage, results_dir,
              sample_names, species_name)
     optional("HTML report", generate_results_html, results_dir, sample_names)
+    return errors
 
 
 def parse_cli(argv):
@@ -2078,7 +2180,8 @@ def parse_cli(argv):
                         help="override the annotation release recorded in the manifest")
     parser.add_argument("--normalization", default=bigwig.DEFAULT_NORMALIZATION,
                         choices=["cpm"],
-                        help="bigWig normalization; must be uniform across all runs")
+                        help="normalization of signal_over_gene; must be uniform across all runs. "
+                             "The bigWigs are raw counts.")
     parser.add_argument("--skip-transcript-expression", action="store_true",
                         help="write expression_transcript.tsv with headers only (it is the "
                              "largest table)")
@@ -2106,6 +2209,7 @@ def build_run_context(metadata, results_dir, run_id, genome_build):
 def main():
     """Run every stage, then emit the tables, checksums, manifest and validation result."""
     args = parse_cli(sys.argv[1:])
+    check_environment()
 
     global REFERENCE_DIR, scripts, results_dir, species_name
 
@@ -2155,13 +2259,15 @@ def main():
             "kallisto_args": " ".join(KALLISTO_COMMON_ARGS),
             "rmats_args": None,
             "deseq2_alpha": DESEQ2_ALPHA,
-            "bigwig_normalization": args.normalization,
+            "bigwig_normalization": bigwig.PRIMARY_NORMALIZATION,
+            "signal_over_gene_normalization": args.normalization,
             "rmats_fdr_threshold": tables_rmats.RMATS_FDR_THRESHOLD,
             "rmats_inclusion_diff_threshold": tables_rmats.RMATS_INC_DIFF_THRESHOLD,
         },
         annotation_version_override=args.annotation_version,
     )
     manifest.set("gene_id_source", annotation.source)
+    manifest.data["parameters"]["kallisto_index"] = kallisto_index_record(species_name)
     print(f"run_id: {manifest.run_id}")
 
     stage = "startup"
@@ -2189,7 +2295,17 @@ def main():
 
         stage = "qc_metrics"
         tables_qc.write_qc_metrics(ctx, results_dir, sample_names, species_name)
-        tables_qc.update_metadata_strandedness(results_dir, library_types)
+        # metadata.tsv records what RSeQC measured, undetermined included; library_types is
+        # what the analysis used.
+        measured_types = {name: strandedness_module.read_measured_library_type(results_dir, name)
+                          for name in sample_names}
+        tables_qc.update_metadata_strandedness(results_dir, measured_types)
+        fallback = [name for name in sample_names
+                    if measured_types[name] != library_types[name]]
+        if fallback:
+            manifest.set("strandedness_fallback", fallback)
+            notify(f"WARNING: analysed as unstranded because RSeQC could not determine their "
+                   f"strandedness: {', '.join(fallback)}")
         library_type = next(iter(set(library_types.values())))
 
         stage = "deseq2"
@@ -2218,7 +2334,9 @@ def main():
         manifest.record_stage("sleuth", status)
 
         stage = "gsea"
-        manifest.record_stage("gsea_mode", run_enrichment(metadata, results_dir, species_name))
+        gsea_mode, gsea_failed = run_enrichment(metadata, results_dir, species_name)
+        manifest.record_stage("gsea_mode", gsea_mode)
+        output_errors = [f"GSEA {name}: gsea-cli failed" for name in gsea_failed]
         rows, status = tables_gsea.write_gene_set_enrichment(ctx, results_dir)
         manifest.record_stage("gene_set_enrichment_rows", rows)
         manifest.record_stage("gsea", status)
@@ -2245,7 +2363,6 @@ def main():
                 ctx, results_dir, sample_name, library_types[sample_name], chr_sizes,
                 normalization=args.normalization))
         bigwig.write_bigwig_manifest(results_dir, bigwig_rows)
-        bigwig.write_raw_count_manifest(ctx, results_dir, bigwig_rows)
         remove_wig(results_dir)
 
         stage = "signal_over_gene"
@@ -2258,11 +2375,14 @@ def main():
             results_dir, organism, library_type, annotation))
 
         stage = "human_readable_outputs"
-        write_human_readable_outputs(metadata_file, results_dir, sample_names, species_name)
+        output_errors += write_human_readable_outputs(
+            metadata_file, results_dir, sample_names, species_name)
+        if output_errors:
+            manifest.set("output_errors", output_errors)
 
         stage = "organize"
         log_total_time(start_time, results_dir)
-        organize_artifacts(results_dir, sample_names)
+        organize_artifacts(results_dir, sample_names, ctx.experiment_id)
 
         stage = "checksums"
         known_hashes = {row["file_path"]: row["sha256"] for row in bigwig_rows}
@@ -2287,7 +2407,11 @@ def main():
     manifest.set("validation", "pass" if report.ok else "fail")
     manifest.write("success")
 
-    print("RNA-seq pipeline completed successfully.")
+    record_output_errors(results_dir, output_errors)
+    if output_errors:
+        print("RNA-seq pipeline completed WITH ERRORS; see above.")
+    else:
+        print("RNA-seq pipeline completed successfully.")
     if not report.ok:
         sys.exit(1)
 
