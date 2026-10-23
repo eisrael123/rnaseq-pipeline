@@ -2184,8 +2184,8 @@ def parse_cli(argv):
                         help="override the annotation release recorded in the manifest")
     parser.add_argument("--normalization", default=bigwig.DEFAULT_NORMALIZATION,
                         choices=["cpm"],
-                        help="normalization of the cpm_bigwigs/ copies and signal_over_gene; "
-                             "must be uniform across all runs. The main bigWigs are raw counts.")
+                        help="normalization of signal_over_gene; must be uniform across all runs. "
+                             "The bigWigs are raw counts.")
     parser.add_argument("--skip-transcript-expression", action="store_true",
                         help="write expression_transcript.tsv with headers only (it is the "
                              "largest table)")
@@ -2264,7 +2264,7 @@ def main():
             "rmats_args": None,
             "deseq2_alpha": DESEQ2_ALPHA,
             "bigwig_normalization": bigwig.PRIMARY_NORMALIZATION,
-            "cpm_bigwig_normalization": args.normalization,
+            "signal_over_gene_normalization": args.normalization,
             "rmats_fdr_threshold": tables_rmats.RMATS_FDR_THRESHOLD,
             "rmats_inclusion_diff_threshold": tables_rmats.RMATS_INC_DIFF_THRESHOLD,
         },
@@ -2367,12 +2367,11 @@ def main():
                 ctx, results_dir, sample_name, library_types[sample_name], chr_sizes,
                 normalization=args.normalization))
         bigwig.write_bigwig_manifest(results_dir, bigwig_rows)
-        bigwig.write_cpm_manifest(results_dir, bigwig_rows)
         remove_wig(results_dir)
 
         stage = "signal_over_gene"
         rows, status = bigwig.write_signal_over_gene(
-            ctx, results_dir, REFERENCE_DIR, annotation, bigwig.cpm_rows(bigwig_rows))
+            ctx, results_dir, REFERENCE_DIR, annotation, bigwig_rows)
         manifest.record_stage("signal_over_gene_rows", rows)
         manifest.record_stage("signal_over_gene", status)
         organism = str(metadata.get('organism', pd.Series(['unknown'])).iloc[0])

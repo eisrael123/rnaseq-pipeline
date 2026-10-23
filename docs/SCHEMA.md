@@ -304,7 +304,7 @@ STAR SJ.out.tab parsed directly, replacing the strand-split BED files.
 
 ### `tables/bigwig_manifest.tsv`
 
-Authoritative description of every bigWig in `artifacts/bigwig/` (raw STAR counts). Filenames are cosmetic; this is not. The CPM copies in `cpm_bigwigs/` are described by `cpm_bigwigs/cpm_manifest.tsv`.
+Authoritative description of every bigWig in `artifacts/bigwig/` (raw STAR counts). Filenames are cosmetic; this is not.
 
 **Grain:** one row per bigWig file
 

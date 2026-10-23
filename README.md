@@ -264,9 +264,9 @@ Optional:
   when the GTF has no version in its header and no `ANNOTATION_VERSION` marker file.
 - `--skip-transcript-expression`: write `expression_transcript.tsv` with headers only. It is by
   far the largest table.
-- `--normalization`: normalization of the `cpm_bigwigs/` copies and of `signal_over_gene`.
-  Leave at the default; it has to be uniform across runs for those to be comparable. The main
-  bigWigs in `artifacts/bigwig/` are always raw counts.
+- `--normalization`: normalization of `signal_over_gene`. Leave at the default; it has to be
+  uniform across runs for those values to be comparable. The bigWigs in `artifacts/bigwig/` are
+  always raw counts.
 
 
 ### 1) Run interactively (recommended first run)
@@ -396,14 +396,13 @@ before this layout existed is recorded in [docs/CURRENT_OUTPUTS.md](docs/CURRENT
 │   ├── bigwig/unique/        raw-count bigWigs, uniquely mapped reads
 │   ├── bigwig/uniquemulti/   raw-count bigWigs, unique + multi-mapped reads
 │   └── rmats_raw/JCEC/       the five *.MATS.JCEC.txt results (rest of rMATS in rmats_raw/)
-├── cpm_bigwigs/        CPM-scaled copies of the bigWigs (unique/, uniquemulti/) + cpm_manifest.tsv
 ├── reports/            XLSX, figures and report.html, for reading rather than querying
 └── logs/               one log per stage
 ```
 
-`cpm_bigwigs/` is not part of the run's `checksums.sha256` (its own manifest carries a SHA-256
-per file) and is not meant to be uploaded with the experiment folder. `signal_over_gene` is
-computed from it, so those values stay comparable between samples.
+No normalized bigWigs are written; normalize downstream if needed. `signal_over_gene` is still
+in CPM, so its values are comparable between samples: it is computed from the raw tracks and
+multiplied by each sample's CPM factor (1e6 / mapped reads).
 
 Runs made before raw counts became the main tracks (all 70 experiments in the archive as of
 October 2026) have CPM bigWigs in `artifacts/bigwig/` and raw copies in a separate
@@ -427,8 +426,6 @@ never one column per sample. Missing values are the literal string `NA`. Every r
   positive), so they mirror below the axis in a genome browser. To compare coverage between
   genes or tracks, use the absolute value; `signal_over_gene` reports positive magnitudes on
   every strand.
-- New: each bigWig has a CPM-scaled copy in `cpm_bigwigs/<content>/<name>.cpm.bw`, described by
-  `cpm_bigwigs/cpm_manifest.tsv`. `signal_over_gene` is computed from the CPM copies.
 - bigWigs are split by content into `artifacts/bigwig/unique/` and
   `artifacts/bigwig/uniquemulti/`, as the original `1_unique/` and `2_unique_multiple/` were.
 - Unstranded libraries get one `unstranded` bigWig per content type, rebuilt from the BAM,
