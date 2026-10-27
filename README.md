@@ -1,488 +1,314 @@
-# RNA-Seq Pipeline Usage Guide 
+# RNA-Seq Pipeline
 
-## Table of Contents
-- [General Information](#general-information)
-- [Getting Started](#getting-started)
-- [Running the Pipeline on Docker](#running-the-pipeline-on-docker)
-  - [Filling in the parameters with the form](#filling-in-the-parameters-with-the-form)
+## Contents
+- [What it does](#what-it-does)
+- [Input](#input)
+- [Setup](#setup)
+- [Running the pipeline](#running-the-pipeline)
+- [Arguments](#arguments)
 - [Outputs](#outputs)
 - [Validating a run](#validating-a-run)
 - [Development](#development)
 
-## General Information
+## What it does
 
-### What this pipeline does
-This RNA-seq pipeline processes raw sequencing data through differential analysis and reporting. Key analytical outputs include:
+Takes the FASTQs of a control-vs-test experiment through to differential analysis and a report:
 
-- Read quality assessment (`FastQC`, `fastp`).
-- Genome alignment (`STAR`).
-- Strandedness inference (`RSeQC`).
-- Transcript abundance quantification (`kallisto`) and gene-level summarization.
-- Differential expression analysis (`DESeq2`).
-- Optional ERCC-based normalization (if ERCC spike-ins are present).
-- Transcript-level differential analysis (`Sleuth`).
-- Gene set enrichment analysis (`GSEA`, MSigDB gene set collections).
-- Alternative splicing analysis (`rMATS`).
-- Final report generation (`report.html`) and organized output directories.
+- Read QC (`FastQC`, `fastp`)
+- Alignment (`STAR`) and strandedness inference (`RSeQC`)
+- Transcript quantification (`kallisto`) and gene-level summaries
+- Differential expression (`DESeq2`, with ERCC normalization when spike-ins are present) and
+  transcript-level analysis (`Sleuth`)
+- Gene set enrichment (`GSEA`, every MSigDB collection in the reference folder)
+- Alternative splicing (`rMATS`)
+- Raw-count bigWigs, splice-junction BEDs, and signal over each gene
+- Figures, spreadsheets and `report.html`
 
-Every one of those steps also writes a machine-readable table under `<results_dir>/tables/`,
-described in [docs/SCHEMA.md](docs/SCHEMA.md). Those tables, not the spreadsheets or the HTML
-report, are what gets loaded into the lab's data warehouse.
+Every step also writes a machine-readable table to `<results_dir>/tables/`, described in
+[docs/SCHEMA.md](docs/SCHEMA.md). Those tables, not the spreadsheets or the report, are what the
+lab's database loads.
 
-### Input structure 
-- Input parent directory name must be in `Model_Experiment` format. The **first** underscore
-  separates the cell model from the experiment descriptor; both parts must be non-empty.
-- The descriptor is free-form after that, so `SNU719_Rta-Zta-2025-04` and `SNU719_Rta-Zta_2025-04`
-  are both valid and both describe the `SNU719` model.
-- **This name is permanent.** It becomes `experiment_id`, and `sample_id` and `comparison_id` are
-  built from it, so it has to be unique across the whole archive. If an experiment is ever
-  repeated, give the second one a distinguishing suffix such as a date — otherwise the two
-  produce identical sample IDs and any query grouped by sample silently pools them.
-- Parent directory must contain two condition subdirectories: `cntl` and `test`.
-- FASTQ files are placed inside those two condition folders. The condition comes from the
-  directory, not from the filename, and replicate numbers are assigned by sorting filenames
-  within each condition (zero-pad past nine, or `cntl10` will sort before `cntl2`).
-
-Example:
+## Input
 
 ```text
-SNU719_Zta-plus-Rta/
-├── cntl
-│   ├── SNU_Cntl1_1.fq.gz
-│   ├── SNU_Cntl1_2.fq.gz
-│   ├── SNU_Cntl2_1.fq.gz
-│   ├── SNU_Cntl2_2.fq.gz
-│   ├── SNU_Cntl3_1.fq.gz
-│   └── SNU_Cntl3_2.fq.gz
-└── test
-    ├── SNU_Zta1_1.fq.gz
-    ├── SNU_Zta1_2.fq.gz
-    ├── SNU_Zta2_1.fq.gz
-    ├── SNU_Zta2_2.fq.gz
-    ├── SNU_Zta3_1.fq.gz
-    └── SNU_Zta3_2.fq.gz
+SNU719_Rta-Zta_2025-04-10/
+├── input_args.json      from the form (see below)
+├── cntl/
+│   ├── SNU719_Rta-Zta_cntl1_1.fq.gz
+│   ├── SNU719_Rta-Zta_cntl1_2.fq.gz
+│   └── ...
+└── test/
+    ├── SNU719_Rta-Zta_test1_1.fq.gz
+    ├── SNU719_Rta-Zta_test1_2.fq.gz
+    └── ...
 ```
 
-### Reference files and supported references
-This repository provides a folder named `/referenceFiles`, which contains assets used by the pipeline (for example STAR index, annotation files, kallisto index, Biomart export, and GSEA gene sets). 
+- **Folder name is `Model_Experiment`.** The first underscore separates the cell model from the
+  descriptor; after that the descriptor is free-form (`SNU719_Rta-Zta_2025-04-10` is model
+  `SNU719`).
+- **The folder name is permanent.** It becomes `experiment_id`, and every `sample_id` and
+  `comparison_id` is built from it, so it must be unique across the archive. If an experiment is
+  repeated, add a distinguishing suffix such as a date, or the two runs get identical sample IDs.
+- **Exactly two subfolders, `cntl` and `test`.** The condition comes from the folder, not the
+  filename. Replicates are numbered by sorting filenames within each folder, so zero-pad past
+  nine (`cntl10` sorts before `cntl2`).
 
-When using the pipeline, you must provide a reference directory path you pass in commands. In this README, examples from inside the Docker Container use:
+### Filling in `input_args.json` with the form
 
-`/data/referenceFiles`
+`metadata_form.html` is a self-contained page (double-click to open; no server or install) that
+asks for each experiment detail with a dropdown and downloads the answers as `input_args.json`.
 
-Supported species currently include:
-- `hg38`
-- `hg38plusAkataInverted`
-- `hg38plusKSHV`
-- `hg38plusKSHVALT`
-- `mm39`
-- `mm39plusMHV68`
+1. Fill in every field. The download button stays disabled, listing what is missing, until all
+   are done.
+2. Put the downloaded file in the experiment folder next to `cntl/` and `test/`, **keeping the
+   name `input_args.json`**. `metadata.py` ignores loose files when it looks for samples, so it
+   does not interfere.
+3. Pass `--quick-input` to `metadata.py` (the one-shot script does this for you).
 
-## Getting Started
+- The file is read only with `--quick-input`.
+- An explicit flag overrides the file, e.g. `--quick-input --library-selection ribodepleted`.
+- Values from the file are not re-checked against `vocab.py`; the dropdowns are the check. Don't
+  hand-edit the JSON; re-download it from the form.
+- The dropdowns are a hand-maintained copy of `rnaseq_helper_scripts/vocab.py`. When you add a
+  value to `vocab.py`, add the matching `<option>` to `metadata_form.html` in the same commit.
 
-### 1) Clone this repository: 
-  ```bash
-  cd /path/you/want/the/folder/to/exist
-  git clone <PASTE_GITHUB_REPO_URL_HERE> rnaseq-pipeline
-  ```
+### Reference files
 
-### 2) Ensure [Docker Desktop](https://www.docker.com/products/docker-desktop/) is installed and running. 
+`referenceFiles` is not in this repository. On the Mac15 it is at
+`/Applications/ngs/pipelines/docker-rnaseq/referenceFiles` and holds, per genome build, the STAR
+index, annotations, kallisto index, Biomart export and GSEA gene sets. Supported builds:
+`hg38`, `hg38plusAkataInverted`, `hg38plusKSHV`, `hg38plusKSHVALT`, `mm39`, `mm39plusMHV68`.
 
-After Docker Desktop opens, verify it is running from Terminal:
-```bash
-docker --version
-docker ps
-```
-If `docker ps` shows an error about connecting to the Docker daemon, Docker Desktop is not running yet.
+## Setup
 
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/eisrael123/rnaseq-pipeline.git
+   cd rnaseq-pipeline
+   ```
+2. Install and start [Docker Desktop](https://www.docker.com/products/docker-desktop/). `docker ps`
+   should run without a "cannot connect to the Docker daemon" error.
+3. In Docker Desktop, **Settings → Resources**:
+   - **File Sharing:** add every parent folder you will mount, including `/Volumes` for external
+     drives and the lab share.
+   - **CPUs and Memory:** give Docker as much as the machine can spare. STAR may use up to 60 GB to
+     sort BAMs, and GSEA runs with a 16 GB Java heap.
+4. Build the image from the repository folder:
+   ```bash
+   docker build --build-arg GIT_COMMIT="$(git rev-parse HEAD)" -t rnaseqpipeline:latest .
+   ```
+   `GIT_COMMIT` is required. Every run records the commit it came from in `run_manifest.json`,
+   and the image cannot read it itself (`.git` is not copied in), so a build without it fails.
+   Rebuild after every `git pull`.
 
-## Running the Pipeline on Docker
+Run one pipeline at a time. It is CPU- and memory-heavy, and competing jobs slow it sharply and
+can cause out-of-memory failures.
 
-### Prerequisites
+## Running the pipeline
 
-#### 1) Docker Desktop File Sharing includes host directories you will mount:
-  - Open Docker Desktop, then go to `Settings` -> `Resources` -> `File Sharing`.
-  - Add or confirm the parent folders you will mount (for example `/Users`, `~/Documents`, etc).
-  - Click `Apply & Restart` if Docker prompts you.
+### One-shot script (normal use)
 
-#### 2) Move into the rnaseq-pipeline folder (do this every new terminal session):
-  ```bash
-  cd /path/to/rnaseq-pipeline
-  ```
-- Confirm you are in the correct folder:
-  ```bash
-  pwd
-  ls
-  ```
-  You should see `Dockerfile`, `metadata.py`, and `rnaseq.py` in the `ls` output.
+Requires `input_args.json` in the experiment folder. The script checks for it and stops before
+starting Docker if it is missing.
 
-#### 3) Build the Docker image
-```bash
-docker build --build-arg GIT_COMMIT="$(git rev-parse HEAD)" -t rnaseqpipeline:latest .
-```
+1. Edit the two variables at the top of `run_pipeline_one_shot.sh`:
+   - `HOST_FASTQ_ROOT_DIR`: the experiment folder
+   - `HOST_OUTPUT_DIR`: where the output goes; must be empty
+2. Run it:
+   ```bash
+   ./run_pipeline_one_shot.sh
+   ```
 
-`GIT_COMMIT` is required. The build context excludes `.git`, so the commit cannot be read from
-inside the image, and every result records the commit it came from in `run_manifest.json`. A
-build without it fails rather than producing an image whose output cannot be traced back to a
-version of the code.
+`HOST_REFERENCE_DIR` is already set for the Mac15; change it only on another machine. To override
+one experiment detail for a single run, add the flag to the `metadata.py` call in the script.
 
-### CPU, memory, and concurrent runs
+### Step by step in an interactive container
 
-To give the container as much compute headroom as your host allows, open Docker Desktop and go to **Settings** → **Resources**. Increase **CPUs** and **Memory** toward what your machine can spare (STAR alignment, abundance estimation, and downstream steps are demanding), then click **Apply & Restart** if Docker asks you to.
-
-This pipeline is **computationally and memory intensive**. Do **not** run multiple instances of the pipeline—or other heavy workloads—at the same time on the same machine unless you know you have spare capacity. Competing processes slow runs sharply and can trigger out-of-memory or other downstream failures.
-
-### Pipeline Arguments 
-#### For metadata.py: 
-
-Every argument is a named flag; there are no positional arguments. There are two ways to supply
-them, and they can be mixed:
-
-| | What you type | Where the rest comes from |
-|---|---|---|
-| **With the form** (normal) | Two directories, plus `--quick-input` | `input_args.json` in the FASTQ folder |
-| **By hand** | Every flag, or answer the prompts | You |
-
-Two flags are always required, because they name where the data sits on *this* machine and
-nothing else can know that:
-
-- `--root-fastq-dir`: Filepath of the FASTQ directory (the one that contains the `cntl` and
-  `test` subdirectories).
-- `--output-dir`: Filepath of where you want the output to exist. The folder must be empty.
-
-The rest can come from a flag, from an interactive prompt, or from
-[the form](#filling-in-the-parameters-with-the-form) via `--quick-input`:
-
-- `--reference-dir`: Filepath of `referenceFiles`.
-- `--species-name`: e.g. hg38, mm39, etc. It must match an existing directory under
-  `referenceFiles`.
-- `--investigator-name`: Name of investigator. Whitespace is stripped, since the name becomes
-  part of the output filename.
-- `--experiment-type`: `PE` for paired-end data or `SE` for single-end data.
-
-`metadata.py` also records what the experiment actually was, so results stay interpretable
-years later. The form asks for all of these; without it, `metadata.py` prompts for each. Pass
-them as flags to skip the prompts, and add `--non-interactive` to make a missing value an error
-instead:
-
-- `--cell-line`, `--organism`, `--perturbation-type`, `--co-treatment`,
-  `--co-treatment-target`, `--facs-purified`, `--facs-gfp-promoter`, `--library-selection`,
-  `--library-strandedness`: controlled vocabularies. An unrecognized value is rejected with the
-  list of allowed values. To add one, edit `rnaseq_helper_scripts/vocab.py`.
-- `--perturbation-agent` (e.g. `Zta`, `Zta+Rta`, `anti-IgG`), `--perturbation-target` (e.g.
-  `BMRF1`, or `NA`), `--perturbation-dose` (e.g. `5ug+5ug`, `100nM`), `--timepoint-hours`,
-  `--sequencing-run-date`, `--notes`: free text.
-
-The perturbation is recorded as three separate axes, because collapsing them is what makes an
-archive unqueryable. `--perturbation-type` is *how* it was delivered (`transfection`,
-`chemical`, `BCR-crosslink`, `none`); `--perturbation-agent` is *what* was delivered (`Zta`,
-`anti-IgG`, `CC115`); `--perturbation-target` is the gene the agent acts on, which is `NA` when
-it has none — Zta or Rta overexpression has no separate molecular target, but an siRNA does.
-
-`--co-treatment` is a second treatment applied alongside the first, with
-`--co-treatment-target` naming what it acts on. Zta under PAA is a Zta perturbation with a `PAA`
-co-treatment, not a single combined value, so "every PAA experiment" stays one filter. Use
-`PAA_replication` as the target where the co-treatment blocks viral DNA replication rather than
-acting on a host gene.
-
-`--facs-purified` and `--facs-gfp-promoter` describe the sequenced material, so they are
-recorded on control rows too. An unsorted transfection is a mixture of transfected and
-untransfected cells, which changes what an expression value means; and sorting on `pCMV`-driven
-GFP selects cells that were transfected, while `BMRF1p` selects cells where the lytic cycle
-actually started. Those are different populations.
-
-`--library-strandedness` is what was ordered at library prep. It is deliberately *not* the same
-field as the `strandedness` column in `metadata.tsv`, which RSeQC measures per sample after
-alignment. The two normally agree, and a disagreement is a useful flag for a mislabeled sample
-or the wrong kit, which is why both are kept.
-
-`--library-selection` is `polyA` or `ribodepleted` (or `unknown` when backfilling older runs),
-and it has no default on purpose. It is not a comparable axis: non-polyadenylated and
-unprocessed transcripts are absent from a polyA library by construction, so the same gene can
-read as absent in one library and abundant in another for reasons that have nothing to do with
-the biology. Recording it per sample is what lets a cross-experiment query either filter to one
-selection method or state that it is mixing them; defaulting it would make the archive quietly
-claim otherwise. It sits alongside `library_layout` (`PE`/`SE`) and the RSeQC-inferred
-`strandedness` in `metadata.tsv`.
-
-### Filling in the parameters with the form
-
-Typing a dozen flags correctly is not the job of whoever ran the experiment. `metadata_form.html`
-is a single self-contained page — open it by double-clicking, no server and no install — that
-asks for each value with a dropdown, then downloads the answers as `input_args.json`.
-
-1. Open `metadata_form.html` in a browser and fill in every field. The download button stays
-   disabled until nothing is missing, and it lists what is still outstanding.
-2. Drag the downloaded `input_args.json` into the experiment's FASTQ folder, alongside the
-   `cntl` and `test` subdirectories. **Keep the filename exactly as downloaded** — that fixed
-   name is how the pipeline finds it.
-   ```text
-    SNU719_Zta-plus-Rta/
-    ├── input_args.json
-    ├── cntl 
-      └── ...
-    └── test
-      └── ...
-    ```
-3. Then, pass `--quick-input`, and the two directory arguments:
-
-```bash
-python metadata.py \
-  --root-fastq-dir /data/SNU719_Zta-plus-Rta \
-  --output-dir /data/output \
-  --quick-input
-```
-
-The file sits next to the condition folders rather than inside them, so it does not disturb
-sample discovery — `metadata.py` walks directories and ignores loose files.
-
-Notes on how it behaves:
-
-- **`--quick-input` is opt-in.** Without the flag the file is never read, even if it is sitting
-  right there. Nothing about the existing flag-driven or interactive workflows changes.
-- **An explicit flag still wins.** `--quick-input --library-selection ribodepleted` overrides
-  what the file says, so a one-off rerun does not need the file edited and re-downloaded.
-- **Values that came from the form are not re-checked against `vocab.py`.** The dropdown is
-  what constrains them, and a second copy of the allowed values in `metadata.py` could only
-  drift from the first. The consequence is worth knowing: a **hand-edited** `input_args.json`
-  can put a value into the archive that the vocabulary would have rejected. Re-download from
-  the form rather than editing the JSON.
-- **The form's dropdowns are a hand-maintained copy of `rnaseq_helper_scripts/vocab.py`.** They
-  agree today. If you add a cell line, genome build, or any other vocabulary value to
-  `vocab.py`, add the matching `<option>` to `metadata_form.html` in the same commit, or the
-  form will silently be unable to offer a value the pipeline supports.
-
-#### For rnaseq.py: 
-- `<reference_dir>`: Same argument as metadata.py.
-- `<scripts_dir>`: The `./rnaseq_helper_scripts` folder in this directory.
-- `<results_dir>`: Same argument as metadata.py. rnaseq.py reads `<results_dir>/metadata.tsv`
-  directly -- metadata.py must have already generated it there -- and updates it in place (e.g.
-  once RSeQC infers `rseqc_measured_strandedness`).
-
-Optional:
-- `--annotation-version`: override the annotation release recorded in the manifest. Needed only
-  when the GTF has no version in its header and no `ANNOTATION_VERSION` marker file.
-- `--skip-transcript-expression`: write `expression_transcript.tsv` with headers only. It is by
-  far the largest table.
-- `--normalization`: normalization of `signal_over_gene`. Leave at the default; it has to be
-  uniform across runs for those values to be comparable. The bigWigs in `artifacts/bigwig/` are
-  always raw counts.
-
-
-### 1) Run interactively (recommended first run)
-#### Mount references, input FASTQs, and output directory:
+Useful for debugging, or for running without the form.
 
 ```bash
 docker run --rm -it \
-  -v "/path/on/your/computer/to/referenceFiles/:/data/referenceFiles:ro" \
-  -v "/path/on/your/computer/to/SNU719_Rta-Zta-2025-04-10:/data/SNU719_Rta-Zta-2025-04-10:ro" \
-  -v "/path/on/your/computer/for/output_folder:/data/output" \
+  -v "/path/to/referenceFiles:/data/referenceFiles:ro" \
+  -v "/path/to/SNU719_Rta-Zta_2025-04-10:/data/SNU719_Rta-Zta_2025-04-10:ro" \
+  -v "/path/to/output_folder:/data/output" \
   -w /work \
-  rnaseqpipeline:latest \
-  bash
+  rnaseqpipeline:latest bash
 ```
 
-**The FASTQ mount point must carry the real experiment directory name**, not a generic one.
-`metadata.py` reads `experiment_id` from the basename of the path you hand it, and that id is
-baked into every `sample_id`. Mounting to a fixed `/data/Model_Experiment` would label every
-experiment in the archive identically; `metadata.py` rejects that name outright to make the
-mistake loud rather than silent.
+**Mount the FASTQ folder under its real name.** `metadata.py` takes `experiment_id` from the
+folder name it is given, so a generic mount point such as `/data/Model_Experiment` would give
+every experiment the same ID. `metadata.py` rejects that name for this reason.
 
-#### **IMPORTANT NOTE**: How paths change inside the container
-When you use `-v` to mount folders, Docker maps folders from your computer to new paths inside the container.    
-
-Use the **container paths** (right side of every colon in each `-v` line) when calling `metadata.py` and `rnaseq.py` inside the container.
-
-- `--root-fastq-dir`: `/data/<your experiment directory name>`
-- `--reference-dir`: `/data/referenceFiles`
-- `--output-dir`: `/data/output`
-- `scripts_dir` (rnaseq.py): `/work/rnaseq_helper_scripts`
-
-Quick mapping examples from the command above:
-- `/path/on/your/computer/to/SNU719_Rta-Zta-2025-04-10` -> `/data/SNU719_Rta-Zta-2025-04-10`
-- `/path/on/your/computer/to/referenceFiles` -> `/data/referenceFiles`
-- `/path/on/your/computer/for/output_folder` -> `/data/output`
-
-#### Inside the container:
-
-#### 1. Activate the pipeline environment:
-   ```bash
-   conda activate rnaseqpipeline
-   ```  
-
-#### 2. Generate metadata:
-
-   If the experiment folder has an `input_args.json` from
-   [the form](#filling-in-the-parameters-with-the-form):
-   ```bash
-   python metadata.py \
-     --root-fastq-dir /data/SNU719_Zta-plus-Rta \
-     --output-dir /data/output \
-     --quick-input
-   ```
-
-   Otherwise pass the run arguments yourself, and answer the experiment prompts (or pass those
-   as flags too — see [Pipeline Arguments](#for-metadatapy)):
-   ```bash
-   python metadata.py \
-     --root-fastq-dir /data/SNU719_Zta-plus-Rta \
-     --output-dir /data/output \
-     --reference-dir /data/referenceFiles \
-     --species-name hg38plusAkataInverted \
-     --investigator-name ethan \
-     --experiment-type PE
-   ```
-
-#### 3. Run the pipeline
-   ```bash
-   python rnaseq.py <reference_dir> <scripts_dir> <results_dir>
-   ```
-   Example:
-   ```bash
-   python rnaseq.py /data/referenceFiles /work/rnaseq_helper_scripts /data/output
-   ```
- 
-
-### 2) One-shot Docker command (non-interactive)
-
-This is the normal way to run the pipeline. It builds the metadata and runs the analysis in a
-single container, start to finish.
-
-**Prerequisite:** the experiment's FASTQ folder must already contain an `input_args.json` from
-[the form](#filling-in-the-parameters-with-the-form). The script reads every experiment detail
-from it and exits immediately, before starting Docker, if it is not there.
-
-Edit exactly two variables at the top of `run_pipeline_one_shot.sh`:
-
-- `HOST_FASTQ_ROOT_DIR` — the experiment folder (holds `cntl/`, `test/`, and `input_args.json`)
-- `HOST_OUTPUT_DIR` — where the output goes; must be empty
-
-Then run it:
+Inside the container, use the container paths (the right-hand side of each `-v`):
 
 ```bash
-./run_pipeline_one_shot.sh
+conda activate rnaseqpipeline
+
+# With input_args.json in the experiment folder:
+python metadata.py \
+  --root-fastq-dir /data/SNU719_Rta-Zta_2025-04-10 \
+  --output-dir /data/output \
+  --quick-input
+
+# Or without it: give the run arguments and answer the prompts (or pass them as flags):
+python metadata.py \
+  --root-fastq-dir /data/SNU719_Rta-Zta_2025-04-10 \
+  --output-dir /data/output \
+  --reference-dir /data/referenceFiles \
+  --species-name hg38plusAkataInverted \
+  --investigator-name ethan \
+  --experiment-type PE
+
+python rnaseq.py /data/referenceFiles /work/rnaseq_helper_scripts /data/output
 ```
 
-Nothing else in the script needs touching. `HOST_REFERENCE_DIR` is already set to the Mac15
-location of `referenceFiles` and only changes on a machine where it lives somewhere else; the
-container paths below it are wired to the mounts.
+## Arguments
 
-The species, investigator, layout, cell line, perturbation and library fields that used to be
-variables in this script are gone — they live in `input_args.json` now, and the script passes
-`--quick-input`. To override one for a single run without re-downloading the file, add the flag
-to the `metadata.py` call inside the script; an explicit flag beats the file.
+### metadata.py
 
-### Checklist
-- Parent folder naming follows `Model_Experiment` (single underscore).
-- Subdirectories are exactly `cntl` and `test`.
-- If using the form: `input_args.json` sits at the top level of the FASTQ folder, next to
-  `cntl`/`test`, under exactly that name.
-- Reference name exists in `referenceFiles`.
-- Environment is `rnaseqpipeline` (native or container).
-- Metadata and rnaseq are run with matching paths in the selected environment.
+All arguments are named flags. Two are always required, because only you know where the data is:
+
+- `--root-fastq-dir`: the experiment folder (contains `cntl/` and `test/`)
+- `--output-dir`: where the output goes; must be empty
+
+The rest come from `input_args.json` (`--quick-input`), from flags, or from interactive prompts.
+Add `--non-interactive` to make a missing value an error instead of a prompt.
+
+Run settings:
+
+- `--reference-dir`: path to `referenceFiles`
+- `--species-name`: genome build; must be a folder in `referenceFiles`
+- `--investigator-name`: whitespace is stripped, since it becomes part of output filenames
+- `--experiment-type`: `PE` (paired-end) or `SE` (single-end)
+
+Experiment description, kept so results stay interpretable years later. Controlled-vocabulary
+fields reject unknown values and list the allowed ones; to add a value, edit
+`rnaseq_helper_scripts/vocab.py` (and the form).
+
+| Flag | Vocabulary | Meaning |
+|---|---|---|
+| `--cell-line`, `--organism` | controlled | |
+| `--perturbation-type` | controlled | *How* it was delivered: `transfection`, `chemical`, `BCR-crosslink`, `none` |
+| `--perturbation-agent` | free text | *What* was delivered: `Zta`, `Zta+Rta`, `anti-IgG`, `CC115` |
+| `--perturbation-target` | free text | The gene the agent acts on (`BMRF1` for an siRNA), or `NA` when it has none, as for Zta or Rta overexpression |
+| `--perturbation-dose` | free text | e.g. `5ug+5ug`, `100nM` |
+| `--co-treatment`, `--co-treatment-target` | controlled | A second treatment and what it acts on. Zta under PAA is agent `Zta` with co-treatment `PAA`, target `PAA_replication`, so "every PAA experiment" stays one filter |
+| `--facs-purified`, `--facs-gfp-promoter` | controlled | Whether, and on what, cells were sorted. Recorded on control rows too. `pCMV`-GFP selects transfected cells; `BMRF1p`-GFP selects cells that entered the lytic cycle |
+| `--library-selection` | controlled | `polyA`, `ribodepleted`, or `unknown` for backfilled runs. No default on purpose: the two methods are not directly comparable, so it must be recorded, not assumed |
+| `--library-strandedness` | controlled | What was ordered at library prep. RSeQC's measured value is stored separately in `metadata.tsv`; a disagreement points to a mislabeled sample or the wrong kit |
+| `--timepoint-hours`, `--sequencing-run-date`, `--notes` | free text | |
+
+### rnaseq.py
+
+```bash
+python rnaseq.py <reference_dir> <scripts_dir> <results_dir>
+```
+
+- `<reference_dir>`: same as `--reference-dir`
+- `<scripts_dir>`: `rnaseq_helper_scripts` (`/work/rnaseq_helper_scripts` in the container)
+- `<results_dir>`: same as `--output-dir`. `metadata.py` must have written `metadata.tsv` there
+  first; `rnaseq.py` updates it in place (e.g. with the RSeQC strandedness).
+
+Optional:
+
+- `--annotation-version`: annotation release to record in the manifest, needed only when the GTF
+  header and `ANNOTATION_VERSION` marker file give none
+- `--skip-transcript-expression`: write `expression_transcript.tsv` with headers only (it is by
+  far the largest table)
+- `--normalization`: normalization of `signal_over_gene`. Leave the default, so values stay
+  comparable across runs
 
 ## Outputs
 
-Full column-by-column reference: **[docs/SCHEMA.md](docs/SCHEMA.md)**. What the pipeline wrote
-before this layout existed is recorded in [docs/CURRENT_OUTPUTS.md](docs/CURRENT_OUTPUTS.md).
+Column-by-column reference: [docs/SCHEMA.md](docs/SCHEMA.md). What the pipeline wrote before
+this layout existed is recorded in [docs/CURRENT_OUTPUTS.md](docs/CURRENT_OUTPUTS.md).
 
 ```text
 <results_dir>/
-├── run_manifest.json   provenance: commit, image, tool versions, reference, exit status
-├── metadata.tsv        one row per sample, with the inferred strandedness filled in
+├── run_manifest.json   provenance: commit, image, tool versions, reference, status
+├── metadata.tsv        one row per sample, with measured strandedness filled in
 ├── checksums.sha256
-├── tables/             the machine-readable results; this is what the warehouse reads
-├── artifacts/          raw tool output, bigWigs and BAMs, kept for re-analysis
+├── tables/             machine-readable results; what the database reads
+├── artifacts/          raw tool output, BAMs and bigWigs, for re-analysis
 │   ├── bigwig/unique/        raw-count bigWigs, uniquely mapped reads
 │   ├── bigwig/uniquemulti/   raw-count bigWigs, unique + multi-mapped reads
-│   └── rmats_raw/JCEC/       the five *.MATS.JCEC.txt results (rest of rMATS in rmats_raw/)
-├── reports/            XLSX, figures and report.html, for reading rather than querying
-└── logs/               one log per stage
+│   ├── rmats_raw/JCEC/       the five *.MATS.JCEC.txt files and summary.txt
+│   ├── deseq2/, sleuth/      XLSX at the top, intermediates in prep_files/
+│   ├── kallisto/<sample>/
+│   └── gsea/                 one folder per gene set collection
+├── reports/            XLSX, figures and report.html, for reading
+└── logs/               one log per stage; errors.log if any output failed
 ```
 
-No normalized bigWigs are written; normalize downstream if needed. `signal_over_gene` is still
-in CPM, so its values are comparable between samples: it is computed from the raw tracks and
-multiplied by each sample's CPM factor (1e6 / mapped reads).
+- **Tables** are long-format TSVs: one row per gene, transcript, event or metric, never one column
+  per sample. Missing values are `NA`. Every row has a `run_id` that joins to `run_manifest.json`.
+- **bigWigs** hold STAR's raw counts (whole reads for unique; 1/N fractions for multi-mappers),
+  named `<sample_id>.<content>.<build>.<strand>.bw`. The strand is resolved from RSeQC, not
+  STAR's `str1`/`str2`. Minus-strand tracks are **negative** so they mirror below the axis in a
+  genome browser; use absolute values to compare coverage. Unstranded libraries get one
+  `unstranded` track per content type. No normalized bigWigs are written.
+- **`signal_over_gene`** is in CPM (raw signal × 1e6 / mapped reads), with positive values on
+  every strand, so it is comparable between samples.
+- **Figures** (volcano, PCA, splicing bar charts, ERCC) are publication-ready: Arial, large text,
+  1 pt black axes and outlines, 300 dpi, colours from the lab's 2026 bioRxiv preprint (Nguyen et
+  al.). See `rnaseq_helper_scripts/figure_style.py`.
+- **File names** people open carry the experiment name: `<experiment>_test_vs_cntl_` on figures
+  and JCEC files, `<experiment>_deseq2_` / `<experiment>_sleuth_` on DESeq2 and Sleuth output
+  (except `deseq2_metadata.tsv`), and `<experiment>_de_gene.xlsx`. Summary tables and
+  `report.html` are unprefixed.
+- **Strandedness:** `report.html` shows `rf-stranded (fr-firststrand)`,
+  `fr-stranded (fr-secondstrand)` or `unstranded`. If RSeQC cannot decide, the sample is analysed
+  as unstranded and the run says so on the terminal, in the log and RSeQC file, as
+  `strandedness_fallback` in the manifest, and in `report.html`; `metadata.tsv` keeps
+  `undetermined`.
+- **GSEA** runs every collection in the reference folder, including the full `gene_ontology` GMT
+  (the only one with cellular-component sets), with a 16 GB Java heap set through
+  `JVM_MEM_OPTS`.
+- **kallisto** in Docker uses an index rebuilt in April 2026 with kallisto 0.52.0; on macOS it
+  uses the original `*_ORIGINAL.kallisto.idx`. Abundances can differ slightly, so the manifest
+  records the index path and SHA-256 under `parameters.kallisto_index`.
+- **Failures:** if a spreadsheet, figure, junction BED, `report.html` or GSEA collection fails,
+  the run finishes but reports it as an error on the terminal, in `logs/errors.log` and in the
+  manifest's `output_errors`. Validation then fails and the run exits non-zero.
 
-Runs made before raw counts became the main tracks (all 70 experiments in the archive as of
-October 2026) have CPM bigWigs in `artifacts/bigwig/` and raw copies in a separate
-`raw_count_bigwigs/<experiment>/` folder on the share. Those raw copies were reconstructed
-from the CPM tracks (CPM ÷ `scale_factor`, rounded), not taken from STAR.
+### Older runs in the archive
 
-Everything in `tables/` is a TSV in long format: one row per gene, transcript, event or metric,
-never one column per sample. Missing values are the literal string `NA`. Every row carries a
-`run_id` that joins back to `run_manifest.json`.
+Runs made between the refactor and October 2026 (all 70 archived experiments) differ from the
+above:
 
-### Differences from pre-1.4 output
-
-- `deseq2_results_genes.tsv` is split. Statistics live in `tables/de_gene.tsv`; per-sample TPMs
-  live in `tables/expression_gene.tsv`. Neither has sample names in its header. The XLSX is
-  still produced for the bench.
-- bigWigs are named `<sample_id>.<content>.<build>.<strand>.bw`. STAR's `str1`/`str2` no longer
-  appears anywhere: which one is the plus strand depends on the library chemistry, so it is
-  resolved from the RSeQC call and written into the filename and the manifest.
-- bigWig values are STAR's raw counts, as before (whole reads for unique, 1/N fractions for
-  multi-mappers). Minus-strand tracks hold **negative** values (plus and unstranded tracks are
-  positive), so they mirror below the axis in a genome browser. To compare coverage between
-  genes or tracks, use the absolute value; `signal_over_gene` reports positive magnitudes on
-  every strand.
-- bigWigs are split by content into `artifacts/bigwig/unique/` and
-  `artifacts/bigwig/uniquemulti/`, as the original `1_unique/` and `2_unique_multiple/` were.
-- Unstranded libraries get one `unstranded` bigWig per content type, rebuilt from the BAM,
-  instead of the original's two positive `str1`/`str2` tracks. Each holds all of the sample's
-  reads.
-- rMATS's five `*.MATS.JCEC.txt` files and `summary.txt` are in `artifacts/rmats_raw/JCEC/`, as
-  in the original `1_JCEC/`; the JC files and intermediates are in `artifacts/rmats_raw/`.
-- Files people open carry the experiment name, as the original's rename passes gave them:
-  `<experiment>_test_vs_cntl_` on figures and the JCEC files, `<experiment>_deseq2_` and
-  `<experiment>_sleuth_` on DESeq2 and Sleuth output (except `deseq2_metadata.tsv`), and
-  `<experiment>_de_gene.xlsx`. The summary tables and `report.html` are unprefixed, as before.
-  Runs made between the refactor and October 2026 have unprefixed names.
-- The DESeq2 and Sleuth XLSX files are at the top of `artifacts/deseq2/` and
-  `artifacts/sleuth/`; everything else those tools wrote is in `prep_files/` below them.
-- kallisto output is in `artifacts/kallisto/<sample>/`. Runs made between the refactor and
-  October 2026 have it one level deeper, in `artifacts/kallisto/kallisto/<sample>/`.
-- GSEA runs every gene set collection in the reference folder, as the original did, including
-  the full `gene_ontology` GMT, the only one with the cellular-component sets. Runs made
-  between commit 9ea83ea (July 2026) and October 2026 skipped it. GSEA now gets a 16 GB Java
-  heap through `JVM_MEM_OPTS`; before, the conda `gsea-cli` silently capped it at 4 GB, which
-  is too small for that file. (The original pipeline's hand-installed `gsea-cli.sh` had
+- CPM bigWigs in `artifacts/bigwig/`, with raw-count copies in a separate
+  `raw_count_bigwigs/<experiment>/` folder on the share. The raw copies were reconstructed from
+  the CPM tracks (CPM ÷ `scale_factor`, rounded), not taken from STAR.
+- Unprefixed file names, and kallisto output one level deeper, in
+  `artifacts/kallisto/kallisto/<sample>/`.
+- No `gene_ontology` GSEA (skipped from commit 9ea83ea, July 2026). GSEA ran with the conda
+  `gsea-cli`'s 4 GB heap, too little for that file. (The original pipeline's `gsea-cli.sh` had
   `-Xmx12g` written into it.)
-- Figures (volcano, PCA, splicing bar charts, ERCC) are drawn for publication: Arial, text
-  about twice the old size, 1 pt black axes and bar outlines, 300 dpi, and colours from the
-  lab's 2026 bioRxiv preprint (Nguyen et al.). See `rnaseq_helper_scripts/figure_style.py`.
-- No CPM bigWigs are written any more; `signal_over_gene` is still in CPM.
-- `results.html` is now `reports/report.html`. Its strandedness row uses the original words
-  with the canonical name alongside: `rf-stranded (fr-firststrand)`,
-  `fr-stranded (fr-secondstrand)`, `unstranded`.
-- If RSeQC cannot determine a sample's strandedness, the sample is analysed as unstranded, as
-  in the original, and the run says so: a warning on the terminal and in the log, a note in the
-  RSeQC file, `strandedness_fallback` in the manifest, and a label in `report.html`.
-  `metadata.tsv` keeps the measured value, `undetermined`.
-- kallisto runs in Docker use an index rebuilt in April 2026 with kallisto 0.52.0. Runs on
-  macOS use the original (`*_ORIGINAL.kallisto.idx`). The two can give slightly different
-  abundances, so the manifest records the index path and SHA-256 under
-  `parameters.kallisto_index`.
-- If a spreadsheet, figure, junction BED, `report.html` or GSEA collection fails, the run still
-  finishes, but the failure is an error: it is printed on the terminal, written to
-  `logs/errors.log`, recorded in the manifest's `output_errors`, and fails validation, so the
-  run exits non-zero. The original pipeline stopped at the first such failure.
+- Older figure style.
+
+Compared with the original pipeline's output, `deseq2_results_genes.tsv` is split into
+`tables/de_gene.tsv` (statistics) and `tables/expression_gene.tsv` (per-sample TPMs), and
+`results.html` is now `reports/report.html`.
 
 ## Validating a run
 
-`rnaseq.py` runs the validator itself and records the result in the manifest. To re-check a
-directory later, or to check an older run:
+`rnaseq.py` validates its own output and records the result in the manifest. To re-check a run
+later, or check an older one:
 
 ```bash
 python rnaseq_helper_scripts/validate_outputs.py /data/output
 ```
 
-It fails on a missing or incomplete manifest, a table whose columns do not match the schema, a
-`sample_id` that is not in `metadata.tsv`, a gene ID that is neither an unversioned Ensembl
-accession nor a listed exception, a splicing replicate with no parent event, any checksum
-that no longer matches, a researcher-facing output the run recorded as failed
-(`output_errors`), and a missing DESeq2 XLSX, volcano plot or `report.html`. Legitimate non-Ensembl IDs — ERCC spike-ins, EBV and KSHV loci — belong
-in `docs/gene_id_exceptions.txt`.
+It fails on:
+- a missing or incomplete manifest
+- a table whose columns do not match the schema
+- a `sample_id` not in `metadata.tsv`
+- a gene ID that is neither an unversioned Ensembl ID nor listed in
+  `docs/gene_id_exceptions.txt` (where ERCC spike-ins and EBV/KSHV loci belong)
+- a splicing replicate with no parent event
+- a checksum mismatch
+- an output the run recorded as failed (`output_errors`)
+- a missing DESeq2 XLSX, volcano plot or `report.html`
 
 ## Development
 
@@ -491,11 +317,10 @@ pip install pandas openpyxl pytest
 python -m pytest
 ```
 
-The tests synthesize tool output and run the real writers over it, so no bioinformatics tools
-are needed. `docs/SCHEMA.md` is generated from `rnaseq_helper_scripts/schemas.py`; after
-changing a schema, regenerate it, or the test suite will fail:
+The tests synthesize tool output and run the real writers over it, so no bioinformatics tools are
+needed. `docs/SCHEMA.md` is generated from `rnaseq_helper_scripts/schemas.py`; after changing a
+schema, regenerate it, or the tests fail:
 
 ```bash
 python rnaseq_helper_scripts/generate_schema_doc.py
 ```
-
