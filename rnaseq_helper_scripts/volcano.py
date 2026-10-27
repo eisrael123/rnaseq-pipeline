@@ -11,13 +11,6 @@ os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
 import matplotlib
 
 matplotlib.use("Agg")
-# Avoid findfont spam when Arial (or other UI fonts) are missing (e.g. Linux/Docker).
-matplotlib.rcParams.update(
-    {
-        "font.family": "sans-serif",
-        "font.sans-serif": ["DejaVu Sans", "Bitstream Vera Sans", "sans-serif"],
-    }
-)
 logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
 
 import numpy as np
@@ -25,7 +18,9 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-sns.set_theme(style="whitegrid", font="DejaVu Sans")
+import figure_style
+
+figure_style.apply()
 
 def generate_volcano_plot(results_dir):
     results_dir = Path(results_dir)
@@ -44,20 +39,30 @@ def generate_volcano_plot(results_dir):
     df.loc[(df['log2FoldChange'] >= log2fc_cutoff) & (df['padj'] < padj_cutoff), 'significance'] = 'Upregulated'
     df.loc[(df['log2FoldChange'] <= -log2fc_cutoff) & (df['padj'] < padj_cutoff), 'significance'] = 'Downregulated'
 
-    # Set colors for significance
-    colors = {'Not Significant': 'grey', 'Upregulated': 'c', 'Downregulated': 'salmon'}
+    # Set colors for significance (figure_style). The pale fills get a thin black edge so
+    # significant genes stand out; the many non-significant ones stay unoutlined.
+    colors = {'Not Significant': figure_style.LIGHT_GREY,
+              'Upregulated': figure_style.PEACH, 'Downregulated': figure_style.STEEL_BLUE}
 
     # Create the volcano plot
     plt.figure(figsize=(10, 8))
-    sns.scatterplot(data=df, x='log2FoldChange', y=-np.log10(df['padj']), hue='significance', palette=colors, edgecolor=None)
-    plt.axhline(y=-np.log10(padj_cutoff), color='black', linestyle='--')
-    plt.axvline(x=log2fc_cutoff, color='black', linestyle='--')
-    plt.axvline(x=-log2fc_cutoff, color='black', linestyle='--')
+    y = -np.log10(df['padj'])
+    background = df['significance'] == 'Not Significant'
+    sns.scatterplot(data=df[background], x='log2FoldChange', y=y[background],
+                    hue='significance', palette=colors, edgecolor=None, linewidth=0)
+    sns.scatterplot(data=df[~background], x='log2FoldChange', y=y[~background],
+                    hue='significance', palette=colors, edgecolor='black', linewidth=0.3)
+    plt.axhline(y=-np.log10(padj_cutoff), color='black', linestyle='--', linewidth=1)
+    plt.axvline(x=log2fc_cutoff, color='black', linestyle='--', linewidth=1)
+    plt.axvline(x=-log2fc_cutoff, color='black', linestyle='--', linewidth=1)
     plt.title('Volcano Plot of DESeq2 Results')
     plt.xlabel('Log2 Fold Change')
     plt.ylabel('-Log10 Adjusted P-Value')
-    plt.legend(title='Significance')
-    plt.tight_layout()
+    handles, labels = plt.gca().get_legend_handles_labels()
+    order = [labels.index(name) for name in ('Upregulated', 'Downregulated', 'Not Significant')
+             if name in labels]
+    plt.legend([handles[i] for i in order], [labels[i] for i in order], title='Significance',
+               markerscale=2)
 
     # Save the plot
     plt.savefig(output_plot_path)

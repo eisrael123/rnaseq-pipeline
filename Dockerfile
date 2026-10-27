@@ -8,6 +8,11 @@ COPY rnaseqpipeline.yml /tmp/rnaseqpipeline.yml
 RUN conda env create -f /tmp/rnaseqpipeline.yml -n rnaseqpipeline \
   && conda clean -afy
 
+# Arial for the figures (figure_style.py, deseq2_analysis_ercc.R). A separate layer with
+# --no-deps so it cannot change any tool version in the environment above.
+RUN conda install -y -n rnaseqpipeline -c conda-forge --no-deps mscorefonts \
+  && conda clean -afy
+
 # Use the pipeline env by default (pandas, STAR, etc. live here — not in conda "base").
 # Interactive bash from miniconda images often runs `conda activate base`, which prepends
 # /opt/conda/bin and shadows this PATH; disable that so `python` stays rnaseqpipeline's.

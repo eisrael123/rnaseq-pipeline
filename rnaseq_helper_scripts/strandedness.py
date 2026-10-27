@@ -27,6 +27,7 @@ _FAILED_RE = re.compile(r"failed to determine:\s*([\d.eE+-]+)")
 _EXPLAINED_RE = re.compile(r'explained by\s*"([^"]+)":\s*([\d.eE+-]+)')
 
 CANONICAL_LINE = "Library Type:"
+FALLBACK_LINE = "Pipeline note: RSeQC could not determine strandedness; analysed as unstranded."
 
 
 def parse_rseqc(text: str) -> dict:
@@ -82,11 +83,27 @@ def rseqc_path(results_dir: Path, sample_name: str) -> Path:
             f"{sample_name}_Aligned.sortedByCoord.out_strandedness.txt")
 
 
-def read_library_type(results_dir: Path, sample_name: str) -> str:
+def analysed_library_type(measured: str) -> str:
+    """The library type the analysis uses for a measured one.
+
+    An ``undetermined`` call is analysed as unstranded, as the original pipeline did, rather
+    than stopping the run; the caller is responsible for telling the user (see
+    rnaseq.infer_strandedness).
+    """
+    return UNSTRANDED if measured == UNDETERMINED else measured
+
+
+def read_measured_library_type(results_dir: Path, sample_name: str) -> str:
+    """RSeQC's call for a sample, ``undetermined`` included."""
     path = rseqc_path(results_dir, sample_name)
     if not path.is_file():
         raise FileNotFoundError(f"RSeQC strandedness file missing for {sample_name}: {path}")
     return parse_rseqc(path.read_text())["library_type"]
+
+
+def read_library_type(results_dir: Path, sample_name: str) -> str:
+    """The library type the analysis uses for a sample (see :func:`analysed_library_type`)."""
+    return analysed_library_type(read_measured_library_type(results_dir, sample_name))
 
 
 def kallisto_option(library_type: str) -> str:
@@ -121,8 +138,8 @@ STAR_STRAND_LABELS = {
 def star_strand_label(library_type: str, star_strand: str) -> str:
     """Genomic strand for a STAR ``str1``/``str2`` signal track.
 
-    Raises for ``undetermined`` libraries: guessing here is exactly how the legacy archive
-    ended up with unrecoverable strand information.
+    Raises for ``undetermined`` libraries: callers must pass the analysed type (see
+    :func:`analysed_library_type`), which is never undetermined.
     """
     if library_type == UNDETERMINED:
         raise ValueError(

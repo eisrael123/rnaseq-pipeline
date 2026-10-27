@@ -23,6 +23,13 @@ from schemas import (GENE_ID_PATTERN, METADATA, REQUIRED_TABLES, VIRAL_GENE_ID_P
 
 GENE_ID_RE = re.compile(GENE_ID_PATTERN)
 EXCEPTIONS_FILE = Path(__file__).resolve().parent.parent / "docs" / "gene_id_exceptions.txt"
+# Researcher-facing files every run must produce. Globs, so the experiment-name prefix is
+# optional and runs from before it was restored still validate.
+RESEARCHER_FILES = (
+    "artifacts/deseq2/*deseq2_results_genes.xlsx",
+    "reports/*volcano_plot.png",
+    "reports/report.html",
+)
 GENE_ID_TABLES = ("de_gene", "expression_gene", "expression_transcript", "transcript_de",
                   "splicing_event", "signal_over_gene")
 
@@ -104,6 +111,17 @@ def validate(results_dir: Path) -> Report:
         if manifest.get("exit_status") != "success":
             report.fail(f"run_manifest.json exit_status is {manifest.get('exit_status')!r}, "
                         "expected 'success'")
+        for sample in manifest.get("strandedness_fallback", []):
+            report.warn(f"{sample}: RSeQC could not determine strandedness; analysed as "
+                        f"unstranded")
+        for error in manifest.get("output_errors", []):
+            report.fail(f"researcher-facing output failed during the run: {error}")
+
+    # 1b. The files people open. The tables can be complete while these are missing, which
+    # used to pass validation.
+    for pattern in RESEARCHER_FILES:
+        if not any(results_dir.glob(pattern)):
+            report.fail(f"no file matching {pattern}")
 
     manifest_run_id = manifest.get("run_id")
 

@@ -112,10 +112,11 @@ def test_bigwig_filenames_carry_strand_and_content(results_dir):
         assert "str1" not in name and "str2" not in name
 
 
-def test_bigwig_manifest_records_normalization(results_dir):
+def test_bigwig_manifest_records_raw_counts(results_dir):
+    """D1: the main bigWigs are STAR's raw counts, as in the original pipeline."""
     manifest = pd.read_csv(results_dir / get_table("bigwig_manifest").relpath, sep="\t")
-    assert set(manifest["normalization"]) == {"cpm"}
-    assert (manifest["scale_factor"] > 0).all()
+    assert set(manifest["normalization"]) == {"raw"}
+    assert (manifest["scale_factor"] == 1.0).all()
 
 
 def test_cpm_scale_factor():
@@ -143,12 +144,12 @@ def test_bed_dedupe_drops_exact_and_name_collisions(tmp_path):
     assert len(lines) == 3
 
 
-def test_wig_rescaling_preserves_declarations(tmp_path):
+def test_wig_signing_preserves_declarations(tmp_path):
     source = tmp_path / "in.wig"
     source.write_text("variableStep chrom=chr1\n1\t10\n2\t20\n")
     target = tmp_path / "out.wig"
-    bigwig._rescale_wig(source, target, 0.5)
-    assert target.read_text() == "variableStep chrom=chr1\n1\t5\n2\t10\n"
+    bigwig._sign_wig(source, target, 1)
+    assert target.read_text() == "variableStep chrom=chr1\n1\t10\n2\t20\n"
 
 
 def test_unstranded_signal_is_rebuilt_from_bam(tmp_path, monkeypatch):
@@ -221,12 +222,13 @@ def test_minus_strand_is_stored_negative():
     assert bigwig.strand_sign("unstranded") == 1
 
 
-def test_wig_rescaling_with_negative_factor(tmp_path):
+def test_wig_signing_negates_minus_strand_without_rounding(tmp_path):
+    """The bigWig value is STAR's with only the strand sign applied -- no scaling, no rounding."""
     source = tmp_path / "in.wig"
-    source.write_text("variableStep chrom=chr1\n1\t10\n2\t20\n")
+    source.write_text("variableStep chrom=chr1\n1\t3\n2\t0.33333\n")
     target = tmp_path / "out.wig"
-    bigwig._rescale_wig(source, target, -0.5)
-    assert target.read_text() == "variableStep chrom=chr1\n1\t-5\n2\t-10\n"
+    bigwig._sign_wig(source, target, -1)
+    assert target.read_text() == "variableStep chrom=chr1\n1\t-3\n2\t-0.33333\n"
 
 
 def test_signal_over_gene_reports_minus_strand_as_positive_magnitude(tmp_path, monkeypatch):
@@ -248,7 +250,8 @@ def test_signal_over_gene_reports_minus_strand_as_positive_magnitude(tmp_path, m
     ctx = SimpleNamespace(run_id="R1", genome_build="hg38")
     annotation = SimpleNamespace(annotate_targets=lambda names: pd.DataFrame({"gene_id": names.values}))
     rows = [{"content": "unique", "file_path": f"artifacts/bigwig/S1.unique.hg38.{s}.bw",
-             "sample_id": "S1", "strand": s} for s in ("plus", "minus")]
+             "sample_id": "S1", "strand": s, "cpm_scale_factor": 1.0}
+            for s in ("plus", "minus")]
     (tmp_path / "logs").mkdir()
 
     n, status = bigwig.write_signal_over_gene(ctx, tmp_path, tmp_path, annotation, rows)
@@ -258,44 +261,11 @@ def test_signal_over_gene_reports_minus_strand_as_positive_magnitude(tmp_path, m
         assert out.loc["minus", col] == out.loc["plus", col] > 0
 
 
-def test_wig_rescaling_writes_raw_counts_in_the_same_pass(tmp_path):
-    """The raw copy is STAR's value with only the strand sign applied -- no scaling, no
-    rounding -- and keeps the declarations."""
-    source = tmp_path / "in.wig"
-    source.write_text("variableStep chrom=chr1\n1\t3\n2\t0.33333\n")
-    scaled, raw = tmp_path / "out.wig", tmp_path / "out.raw.wig"
-    bigwig._rescale_wig(source, scaled, -0.5, raw_target=raw, raw_sign=-1)
-    assert scaled.read_text() == "variableStep chrom=chr1\n1\t-1.5\n2\t-0.166665\n"
-    assert raw.read_text() == "variableStep chrom=chr1\n1\t-3\n2\t-0.33333\n"
-
-
-def test_raw_count_manifest_pairs_each_raw_track_with_its_cpm_track(tmp_path):
-    from outputs import RunContext
-    ctx = RunContext(run_id="R1", experiment_id="Cell_X_2026-01-01", results_dir=tmp_path,
-                     genome_build=GENOME_BUILD)
-    rows = [{"run_id": "R1", "sample_id": "S1", "content": content, "strand": "minus",
-             "genome_build": GENOME_BUILD, "scale_factor": 0.5,
-             "file_path": f"artifacts/bigwig/{content}/S1.{content}.{GENOME_BUILD}.minus.bw",
-             "raw_file_path": f"{content}/S1.{content}.{GENOME_BUILD}.minus.raw.bw",
-             "raw_sha256": "ab" * 32, "raw_bytes": 10}
-            for content in ("unique", "uniquemulti")]
-    path = bigwig.write_raw_count_manifest(ctx, tmp_path, rows)
-    assert path == tmp_path / "raw_count_bigwigs" / "raw_count_manifest.tsv"
-    manifest = pd.read_csv(path, sep="\t")
-    assert list(manifest.columns) == bigwig.RAW_COUNT_COLUMNS
-    assert list(manifest["file_path"]) == [r["raw_file_path"] for r in rows]
-    assert list(manifest["source_file"]) == [
-        f"pipeline_output/Cell_X_2026-01-01/{r['file_path']}" for r in rows]
-    assert list(manifest["values"]) == ["integer_reads", "fractional_reads"]
-    assert (manifest["max_rounding_residual"] == 0).all()
-    assert (manifest["ambiguous_positions"] == 0).all()
-
-
 @pytest.mark.skipif(not __import__("shutil").which("wigToBigWig"),
                     reason="wigToBigWig not on PATH (runs inside the pipeline image)")
-def test_convert_sample_bigwigs_writes_split_cpm_and_raw_tracks(tmp_path, monkeypatch):
-    """End to end with the real wigToBigWig: CPM tracks under artifacts/bigwig/<content>/,
-    raw tracks under raw_count_bigwigs/<content>/, minus strand negative in both."""
+def test_convert_sample_bigwigs_writes_split_raw_tracks_only(tmp_path, monkeypatch):
+    """End to end with the real wigToBigWig: raw tracks under artifacts/bigwig/<content>/,
+    minus strand negative, and no CPM copies (the PI: normalize downstream)."""
     pyBigWig = pytest.importorskip("pyBigWig")
     from outputs import RunContext
     sample = "S1"
@@ -316,13 +286,37 @@ def test_convert_sample_bigwigs_writes_split_cpm_and_raw_tracks(tmp_path, monkey
     rows = bigwig.convert_sample_bigwigs(ctx, tmp_path, sample, "stranded_reverse", sizes)
     assert len(rows) == 4
     for row in rows:
-        cpm_path = tmp_path / row["file_path"]
-        raw_path = tmp_path / "raw_count_bigwigs" / row["raw_file_path"]
+        raw_path = tmp_path / row["file_path"]
         assert row["file_path"].startswith(f"artifacts/bigwig/{row['content']}/")
-        assert row["raw_file_path"].startswith(f"{row['content']}/")
+        assert (row["normalization"], row["scale_factor"]) == ("raw", 1.0)
+        assert row["cpm_scale_factor"] == pytest.approx(0.5)
         sign = -1 if row["strand"] == "minus" else 1
-        cpm = [v for _, _, v in pyBigWig.open(str(cpm_path)).intervals("chr1")]
         raw = [v for _, _, v in pyBigWig.open(str(raw_path)).intervals("chr1")]
         assert raw == [4 * sign, 7 * sign]
-        assert cpm == pytest.approx([4 * sign * 0.5, 7 * sign * 0.5])
     assert not list((tmp_path / "star" / sample).glob("*.raw.wig"))
+    assert not (tmp_path / "cpm_bigwigs").exists()
+
+
+def test_signal_over_gene_is_in_cpm_without_cpm_bigwigs(tmp_path, monkeypatch):
+    """With no CPM bigWigs written, signal_over_gene scales the raw tracks' sum and max (and so
+    the mean) by the sample's CPM factor, giving what averaging a CPM track gave."""
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(bigwig.shutil, "which", lambda tool: "/usr/bin/" + tool)
+    monkeypatch.setattr(bigwig, "feature_bed_files", lambda ref, build: {"gene_body": tmp_path / "g.bed"})
+    monkeypatch.setattr(bigwig, "_bed_with_unique_names", lambda bed, out: bed)
+    monkeypatch.setattr(bigwig, "_average_over_bed", lambda b, bed, out: pd.DataFrame(
+        [{"name": "GENE1", "size": 100, "covered": 50, "sum": 400.0, "mean0": 4.0,
+          "mean": 8.0, "min": 1.0, "max": 9.0}]))
+    captured = {}
+    monkeypatch.setattr(bigwig, "write_table", lambda d, name, frame: captured.setdefault(name, frame))
+    ctx = SimpleNamespace(run_id="R1", genome_build="hg38")
+    annotation = SimpleNamespace(annotate_targets=lambda names: pd.DataFrame({"gene_id": names.values}))
+    rows = [{"content": "unique", "file_path": "artifacts/bigwig/unique/S1.unique.hg38.plus.bw",
+             "sample_id": "S1", "strand": "plus", "cpm_scale_factor": 0.25}]
+    (tmp_path / "logs").mkdir()
+    bigwig.write_signal_over_gene(ctx, tmp_path, tmp_path, annotation, rows)
+    out = captured["signal_over_gene"].iloc[0]
+    assert out["sum_coverage"] == 100.0
+    assert out["max_coverage"] == 2.25
+    assert out["mean_coverage"] == 1.0
