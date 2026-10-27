@@ -75,7 +75,8 @@ asks for each experiment detail with a dropdown and downloads the answers as `in
 ### Reference files
 
 `referenceFiles` is not in this repository. On the Mac15 it is at
-`/Applications/ngs/pipelines/docker-rnaseq/referenceFiles` and holds, per genome build, the STAR
+`/Applications/ngs/pipelines/docker-rnaseq/referenceFiles`, with a copy on the lab NAS at
+`VIRA/rnaseq/referenceFiles`. It holds, per genome build, the STAR
 index, annotations, kallisto index, Biomart export and GSEA gene sets. Supported builds:
 `hg38`, `hg38plusAkataInverted`, `hg38plusKSHV`, `hg38plusKSHVALT`, `mm39`, `mm39plusMHV68`.
 
@@ -119,8 +120,17 @@ starting Docker if it is missing.
    ./run_pipeline_one_shot.sh
    ```
 
-`HOST_REFERENCE_DIR` is already set for the Mac15; change it only on another machine. To override
-one experiment detail for a single run, add the flag to the `metadata.py` call in the script.
+Both can instead be passed in the environment, which is how `update_kit/tools/run_pipelines.sh`
+calls it:
+
+```bash
+HOST_FASTQ_ROOT_DIR=/path/to/Mutu_X_2026-01-01 HOST_OUTPUT_DIR=/path/to/output ./run_pipeline_one_shot.sh
+```
+
+`referenceFiles` is taken from the Mac15's local copy, or from the NAS copy
+(`VIRA/rnaseq/referenceFiles`) if there is none; set `HOST_REFERENCE_DIR` to force one. To
+override one experiment detail for a single run, add the flag to the `metadata.py` call in the
+script.
 
 ### Step by step in an interactive container
 

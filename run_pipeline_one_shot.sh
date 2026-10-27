@@ -9,11 +9,29 @@ set -euo pipefail
 # that metadata_form.html produced, which must be sitting at the top level of
 # HOST_FASTQ_ROOT_DIR alongside the cntl/ and test/ subdirectories.
 # ---------------------------------------------------------------------------
-HOST_FASTQ_ROOT_DIR="/path/to/Model_Experiment/on/your/computer"
-HOST_OUTPUT_DIR="/path/to/output/folder/on/your/computer"
+#
+# Either edit the two defaults below, or pass them in the environment (this is
+# how ../tools/run_pipelines.sh calls this script):
+#   HOST_FASTQ_ROOT_DIR=/local/Mutu_X_2026-01-01 HOST_OUTPUT_DIR=/local/pipeline_output/Mutu_X_2026-01-01 ./run_pipeline_one_shot.sh
+# ---------------------------------------------------------------------------
+HOST_FASTQ_ROOT_DIR="${HOST_FASTQ_ROOT_DIR:-/path/to/Model_Experiment/on/your/computer}"
+HOST_OUTPUT_DIR="${HOST_OUTPUT_DIR:-/path/to/output/folder/on/your/computer}"
 
-# Fixed on the Mac15. Change it only on a machine where referenceFiles lives elsewhere.
-HOST_REFERENCE_DIR="/Applications/ngs/pipelines/docker-rnaseq/referenceFiles"
+# Reference files: prefer the local copy on the Mac15 (fast local disk); fall back to the
+# copy on the lab NAS. Set HOST_REFERENCE_DIR in the environment to force a specific one.
+LOCAL_REFERENCE_DIR="/Applications/ngs/pipelines/docker-rnaseq/referenceFiles"
+NAS_REFERENCE_DIR="/Volumes/FlemingtonLabMain1/VIRA/rnaseq/referenceFiles"
+if [[ -z "${HOST_REFERENCE_DIR:-}" ]]; then
+  if [[ -d "${LOCAL_REFERENCE_DIR}" ]]; then
+    HOST_REFERENCE_DIR="${LOCAL_REFERENCE_DIR}"
+  elif [[ -d "${NAS_REFERENCE_DIR}" ]]; then
+    HOST_REFERENCE_DIR="${NAS_REFERENCE_DIR}"
+  else
+    echo "ERROR: referenceFiles not found at ${LOCAL_REFERENCE_DIR} or ${NAS_REFERENCE_DIR}" >&2
+    exit 1
+  fi
+fi
+echo "Using reference files: ${HOST_REFERENCE_DIR}"
 
 # Container paths (do not change unless you also change the mounted paths below).
 IMAGE="rnaseqpipeline:latest"
